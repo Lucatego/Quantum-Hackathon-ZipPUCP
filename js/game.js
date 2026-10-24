@@ -89,9 +89,13 @@
   function zoneOf(p) {
     let zone = null;
     for (const f of world.fog) {
-      if (Math.hypot(p.x - f.x, p.y - f.y) < f.r) {
-        if (f.storm) return 'tormenta';
-        zone = 'niebla';
+      if (Math.hypot(p.x - f.x, p.y - f.y) >= f.r) continue;
+      for (const c of f.blobs) {
+        if (Math.hypot(p.x - f.x - c.dx, p.y - f.y - c.dy) < c.r) {
+          if (f.storm) return 'tormenta';
+          zone = 'niebla';
+          break;
+        }
       }
     }
     return zone;
@@ -151,8 +155,9 @@
 
   function pointInFog() {
     const f = world.fog[Math.floor(Math.random() * world.fog.length)];
-    const a = rand(0, Math.PI * 2), r = rand(0, f.r * 0.7);
-    return { x: f.x + Math.cos(a) * r, y: f.y + Math.sin(a) * r };
+    const c = f.blobs[Math.floor(Math.random() * f.blobs.length)];
+    const a = rand(0, Math.PI * 2), r = rand(0, c.r * 0.7);
+    return { x: f.x + c.dx + Math.cos(a) * r, y: f.y + c.dy + Math.sin(a) * r };
   }
 
   // Destino de un bot que deambula: esconderse en la niebla, cazar cerca del jugador (en un mapa
@@ -170,10 +175,25 @@
     return randomPoint();
   }
 
+  // Un banco de niebla es un grupo de círculos superpuestos (forma de humo). f.x, f.y y f.r son el
+  // contorno de todo el banco; cada círculo guarda su desplazamiento y radio iniciales (dx0, dy0, r0).
+  function makeFogBank(x, y, size, storm) {
+    const blobs = [{ dx0: 0, dy0: 0, r0: size * 0.72 }];
+    const n = 2 + Math.floor(Math.random() * 3);
+    const a0 = rand(0, Math.PI * 2);
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * Math.PI * 2 + rand(-0.4, 0.4), d = size * rand(0.35, 0.6);
+      blobs.push({ dx0: Math.cos(a) * d, dy0: Math.sin(a) * d, r0: size * rand(0.38, 0.55) });
+    }
+    for (const c of blobs) { c.dx = c.dx0; c.dy = c.dy0; c.r = c.r0; }
+    const bound = Math.max(...blobs.map((c) => Math.hypot(c.dx0, c.dy0) + c.r0));
+    return { x, y, r: bound, rBound0: bound, storm, blobs };
+  }
+
   function newWorld() {
     const W = config.world.w, H = config.world.h;
     const layout = W >= 3000 ? FOG_LAYOUT_LARGE : FOG_LAYOUT_SMALL;
-    const fog = layout.map(([fx, fy, r, storm]) => ({ x: W * fx, y: H * fy, r, r0: r, storm: !!storm }));
+    const fog = layout.map(([fx, fy, r, storm]) => makeFogBank(W * fx, H * fy, r, !!storm));
     const player = makeTank(W / 2, H * 0.82, true, null);
     const bots = [];
     for (let i = 0; i < config.bots; i++) {
@@ -471,7 +491,10 @@
       }
     }
     if (w.fogScale < w.fogTarget) w.fogScale = Math.min(w.fogTarget, w.fogScale + config.fogGrowSpeed * dt);
-    for (const f of w.fog) f.r = f.r0 * w.fogScale;
+    for (const f of w.fog) {
+      f.r = f.rBound0 * w.fogScale;
+      for (const c of f.blobs) { c.dx = c.dx0 * w.fogScale; c.dy = c.dy0 * w.fogScale; c.r = c.r0 * w.fogScale; }
+    }
   }
 
   function update(dtReal) {
@@ -593,13 +616,16 @@
     for (const f of world.fog) {
       if (f.x + f.r < cam.x || f.x - f.r > cam.x + v.w || f.y + f.r < cam.y || f.y - f.r > cam.y + v.h) continue;
       const rgb = f.storm ? '190,120,200' : '150,160,185';
-      const g = ctx.createRadialGradient(f.x, f.y, f.r * 0.55, f.x, f.y, f.r);
-      g.addColorStop(0, 'rgba(' + rgb + ',0.55)');
-      g.addColorStop(1, 'rgba(' + rgb + ',0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-      ctx.fill();
+      for (const c of f.blobs) {
+        const cx = f.x + c.dx, cy = f.y + c.dy;
+        const g = ctx.createRadialGradient(cx, cy, c.r * 0.45, cx, cy, c.r);
+        g.addColorStop(0, 'rgba(' + rgb + ',0.42)');
+        g.addColorStop(1, 'rgba(' + rgb + ',0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, c.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
       if (f.storm) {
         ctx.font = 'bold 14px system-ui, sans-serif';
         ctx.textAlign = 'center';
@@ -677,10 +703,12 @@
     ctx.fillStyle = 'rgba(8,10,20,0.75)';
     ctx.fillRect(mx, my, mw, mh);
     for (const f of world.fog) {
-      ctx.fillStyle = f.storm ? 'rgba(190,120,200,0.6)' : 'rgba(150,160,185,0.45)';
-      ctx.beginPath();
-      ctx.arc(mx + f.x * s, my + f.y * s, f.r * s, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = f.storm ? 'rgba(190,120,200,0.5)' : 'rgba(150,160,185,0.35)';
+      for (const c of f.blobs) {
+        ctx.beginPath();
+        ctx.arc(mx + (f.x + c.dx) * s, my + (f.y + c.dy) * s, c.r * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.strokeStyle = 'rgba(232,236,244,0.35)';
     ctx.lineWidth = 1;
