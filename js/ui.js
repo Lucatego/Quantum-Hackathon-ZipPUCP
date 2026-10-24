@@ -3,7 +3,62 @@
 (function () {
   'use strict';
 
-  function drawHUD(ctx, state) {}
+  // ---- HUD (fase 2) ----
+  var HUD = { x: 12, y: 12, barW: 180, barH: 12, blinkMs: 250 };
+
+  function pill(ctx, x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+  }
+
+  function drawHUD(ctx, state) {
+    if (!ctx || !state) return;
+    var quantum = state.cannon === 'quantum';
+    var energy = Math.max(0, Math.min(100, num(state.energy)));
+    var k = Math.round(num(state.k));
+    var x = HUD.x, y = HUD.y;
+
+    ctx.save();
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    // Cañón activo + k (y costo si Game lo informa)
+    pill(ctx, x, y, 10, 22, quantum ? COLOR.pos : COLOR.prob);
+    ctx.fillStyle = COLOR.text;
+    var line = (quantum ? 'CUÁNTICO' : 'CLÁSICO') + ' · k = ' + k;
+    if (typeof state.cost === 'number' && isFinite(state.cost)) line += ' · costo ' + Math.round(state.cost);
+    else if (typeof state.costPerQuery === 'number' && isFinite(state.costPerQuery)) line += ' · ' + Math.round(state.costPerQuery) + '/consulta';
+    ctx.fillText(line, x + 18, y + 11);
+
+    // Energía 0..100
+    var by = y + 34;
+    ctx.fillStyle = 'rgba(232,236,244,0.15)';
+    ctx.fillRect(x, by, HUD.barW, HUD.barH);
+    ctx.fillStyle = energy < 25 ? COLOR.neg : COLOR.live;
+    ctx.fillRect(x, by, HUD.barW * energy / 100, HUD.barH);
+    ctx.fillStyle = COLOR.text;
+    ctx.fillText('Energía ' + Math.round(energy), x + HUD.barW + 10, by + HUD.barH / 2);
+
+    // Opcionales: vida y bots restantes
+    var extra = [];
+    if (typeof state.hp === 'number' && isFinite(state.hp)) extra.push('Vida ' + Math.round(state.hp));
+    if (typeof state.botsLeft === 'number' && isFinite(state.botsLeft)) extra.push('Bots ' + Math.round(state.botsLeft));
+    if (extra.length) { ctx.fillStyle = COLOR.text; ctx.fillText(extra.join(' · '), x, by + 30); }
+
+    // Radar "hay alguien": parpadea con Date.now()
+    if (state.radar) {
+      var on = Math.floor(Date.now() / HUD.blinkMs) % 2 === 0;
+      var ry = by + (extra.length ? 58 : 30);
+      if (on) { ctx.fillStyle = COLOR.neg; ctx.beginPath(); ctx.arc(x + 8, ry, 7, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = COLOR.text;
+      ctx.fillText(state.searching ? 'Buscando…' : 'Radar: hay alguien (Espacio)', x + 22, ry);
+    } else if (state.searching) {
+      ctx.fillStyle = COLOR.text;
+      ctx.fillText('Buscando…', x, by + (extra.length ? 58 : 30));
+    }
+    ctx.restore();
+  }
   // ---- Sectores (fase 1) ----
   var R0 = 26;          // radio libre alrededor del tanque
   var RLEN = 70;        // largo de la barra para valor 1
