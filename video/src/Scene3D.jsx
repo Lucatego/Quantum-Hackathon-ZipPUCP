@@ -52,7 +52,7 @@ export const Tank3D = ({ color = COL.tank, dark = COL.tankDark, yaw = 0, positio
 );
 
 export const Ground = ({ radius = 2.8, opacity = 0.7 }) => (
-  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.005, 0]}>
+  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
     <circleGeometry args={[radius, 64]} />
     <meshBasicMaterial color={COL.ground} transparent opacity={opacity} />
   </mesh>

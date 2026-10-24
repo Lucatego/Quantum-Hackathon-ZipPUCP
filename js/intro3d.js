@@ -186,7 +186,7 @@
     var sun = new T.DirectionalLight(0xffffff, 0.8); sun.position.set(3, 6, 2); scene.add(sun);
 
     var ground = new T.Mesh(new T.CircleGeometry(R1 + 0.5, 48), new T.MeshBasicMaterial({ color: PAL.ground, transparent: true, opacity: 0.55 }));
-    ground.rotation.x = -Math.PI / 2; scene.add(ground);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03; scene.add(ground);   // bajo las columnas: evita z-fighting con las que cuelgan (amplitud negativa)
     scene.add(buildTank(T));
 
     var sectors = [];

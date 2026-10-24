@@ -362,7 +362,7 @@
     assert(/El reto/.test(bodyText()), 'falta la primera diapositiva');
     assert(btn(/Anterior/).disabled, 'Anterior debe estar deshabilitado en la primera');
     btn(/Siguiente/).click();
-    assert(/Controles/.test(bodyText()), 'no avanzó');
+    assert(/Cómo se juega/.test(bodyText()), 'no avanzó');
     btn(/Anterior/).click();
     assert(/El reto/.test(bodyText()), 'no retrocedió');
   });
@@ -392,7 +392,7 @@
     window.Content = undefined;
     UI.showGuide(function () {});
     key('ArrowRight');
-    assert(/Controles/.test(bodyText()), 'ArrowRight no avanzó');
+    assert(/Cómo se juega/.test(bodyText()), 'ArrowRight no avanzó');
     key('ArrowLeft');
     assert(/El reto/.test(bodyText()), 'ArrowLeft no retrocedió');
     key('Escape');
@@ -413,13 +413,110 @@
     key('Escape');
   });
 
-  dom('showGuide: la diapositiva de las barras incluye ejemplos dibujados', function () {
+  // Avanza hasta la diapositiva cuyo título coincide; falla si no existe.
+  function goToSlide(re) {
+    for (var i = 0; i < 20 && !re.test((document.querySelector('#ui-overlay h2') || {}).textContent || ''); i++) {
+      var next = btn(/Siguiente/); assert(next, 'no existe la diapositiva ' + re);
+      next.click();
+    }
+    assert(re.test(document.querySelector('#ui-overlay h2').textContent), 'no llegó a ' + re);
+  }
+
+  dom('showGuide: la diapositiva de los cañones incluye ejemplos dibujados', function () {
     window.Content = undefined;
     UI.showGuide(function () {});
-    for (var i = 0; i < 3; i++) btn(/Siguiente/).click();
-    assert(/Cómo leer las barras/.test(bodyText()), 'no llegó a la diapositiva 4');
+    goToSlide(/Dos cañones/);
     assertEq(document.querySelectorAll('#ui-overlay canvas').length, 2, 'se esperan 2 canvas (clásico y cuántico)');
     key('Escape');
+  });
+
+  dom('showGuide: "El reto" dibuja el tanque con los 8 sectores', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    assert(/El reto/.test(bodyText()), 'la primera diapositiva es El reto');
+    assertEq(document.querySelectorAll('#ui-overlay canvas').length, 1, 'se espera 1 canvas con el diagrama');
+    key('Escape');
+  });
+
+  dom('showGuide: "Cómo se juega" muestra los 3 pasos', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/Cómo se juega/);
+    assertEq(document.querySelectorAll('#ui-overlay .fstep').length, 3, 'se esperan 3 tarjetas de pasos');
+    assert(/Espacio/.test(bodyText()), 'el tercer paso menciona Espacio');
+    key('Escape');
+  });
+
+  dom('showGuide: "Controles" dibuja las teclas, incluidas Espacio, R y Z/X', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/Controles/);
+    var keys = Array.prototype.map.call(document.querySelectorAll('#ui-overlay .key'), function (k) { return k.textContent; });
+    ['W', 'A', 'S', 'D', 'Espacio', 'F', 'R', 'Z', 'X', 'Q', 'E'].forEach(function (k) { assert(keys.indexOf(k) >= 0, 'falta la tecla ' + k); });
+    key('Escape');
+  });
+
+  dom('showGuide: la diapositiva de computación cuántica relaciona juego y circuito', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/computación cuántica/);
+    var t = bodyText();
+    ['3 qubits', 'Amplitud', 'Probabilidad', 'oráculo', 'Pieza M', 'Pieza D', 'Grover', 'Medición'].forEach(function (w) { assert(t.indexOf(w) >= 0, 'falta "' + w + '" en la tabla'); });
+    assert(/abstracción/.test(t), 'debe aclarar que el sensor es una abstracción');
+    key('Escape');
+  });
+
+  dom('showGuide: el circuito cambia con k y muestra el acierto teórico', function () {
+    window.Content = undefined; window.Quantum = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/es un circuito/);
+    function gates(label) { return Array.prototype.filter.call(document.querySelectorAll('#ui-overlay .circuit svg text'), function (t) { return t.textContent === label; }).length; }
+    btn(/^k = 0$/).click();
+    assertEq(gates('M'), 0, 'k = 0 no tiene marcadores'); assertEq(gates('D'), 0, 'k = 0 no tiene difusores');
+    assert(/12,5 %/.test(bodyText()), 'k = 0 → 12,5 %');
+    btn(/^k = 3$/).click();
+    assertEq(gates('M'), 3, 'k = 3 tiene 3 marcadores'); assertEq(gates('D'), 3, 'k = 3 tiene 3 difusores');
+    assert(/33,0 %/.test(bodyText()), 'k = 3 → 33,0 %');
+    btn(/^k = 2$/).click();
+    assert(/94,5 %/.test(bodyText()), 'k = 2 → 94,5 %');
+    key('Escape');
+  });
+
+  dom('showGuide: el circuito usa el simulador cuando existe', function () {
+    window.Content = undefined;
+    var saved = window.Quantum;
+    try {
+      window.Quantum = { runQuantum: function (a) { var p = []; for (var i = 0; i < 8; i++) p.push(i === a.target ? 0.777 : 0.03); return { probs: p, amps: [] }; } };
+      UI.showGuide(function () {});
+      goToSlide(/es un circuito/);
+      assert(/77,7 %/.test(bodyText()), 'debe mostrar el 77,7 % del simulador falso, no el de la tabla');
+      key('Escape');
+    } finally { window.Quantum = saved; }
+  });
+
+  dom('showGuide: la trampa muestra 8 barras y marca el k = 3 cuántico', function () {
+    window.Content = undefined; window.Quantum = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/La trampa/);
+    assertEq(document.querySelectorAll('#ui-overlay .cbar').length, 8, 'se esperan 8 barras (2 por k)');
+    assertEq(document.querySelectorAll('#ui-overlay .cbar.warn').length, 1, 'solo el cuántico con k = 3 se marca');
+    var t = bodyText();
+    ['12,5 %', '25,0 %', '37,5 %', '50,0 %', '78,1 %', '94,5 %', '33,0 %'].forEach(function (v) { assert(t.indexOf(v) >= 0, 'falta ' + v); });
+    key('Escape');
+  });
+
+  dom('showGuide: una diapositiva de Content.guide con visual desconocido solo muestra el texto', function () {
+    window.Content = { guide: [{ titulo: 'T', texto: 'SOLO-TEXTO', visual: 'no-existe' }] };
+    UI.showGuide(function () {});
+    assert(/SOLO-TEXTO/.test(bodyText()), 'debe mostrar el texto');
+    key('Escape');
+  });
+
+  dom('showStart: la pista de teclas refleja el circuito (Q/E solo clásico, R suelta pieza)', function () {
+    window.Content = undefined;
+    UI.showStart(function () {});
+    var h = document.querySelector('#ui-overlay .hint').textContent;
+    assert(/Q \/ E k clásico/.test(h) && /R soltar pieza/.test(h), 'texto viejo: ' + h);
   });
 
   dom('showGuide: "Cómo jugar" desde el inicio abre la guía y al cerrar vuelve al inicio', function () {
