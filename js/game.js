@@ -8,8 +8,8 @@
   const RECORD_KEY = 'collapse.record';
 
   const config = {
-    world: { w: 2000, h: 1300 },
-    bots: 6,
+    world: { w: 3200, h: 2200 },
+    bots: 10,
     playerSpeed: 230,
     botSpeed: 110,
     bulletSpeed: 620,
@@ -47,6 +47,15 @@
     ansioso: { label: 'ansioso', cannon: 'quantum', k: 3 },
   };
   const ARCH_ORDER = ['clasico', 'cuantico', 'ansioso'];
+
+  // Zonas de niebla como fracciones del mapa: [x, y, radio, tormenta?]. El mapa chico es el de ?demo.
+  const FOG_LAYOUT_SMALL = [
+    [0.28, 0.35, 220], [0.72, 0.58, 260, true], [0.52, 0.16, 160], [0.18, 0.8, 150],
+  ];
+  const FOG_LAYOUT_LARGE = [
+    [0.15, 0.2, 230], [0.42, 0.14, 200], [0.76, 0.18, 240], [0.28, 0.5, 260], [0.62, 0.46, 300, true],
+    [0.88, 0.55, 210], [0.18, 0.84, 220], [0.52, 0.8, 250], [0.84, 0.86, 190],
+  ];
 
   const Game = { config, log: [], history: [], state: null, record: loadRecord(), start };
   window.Game = Game;
@@ -146,15 +155,25 @@
     return { x: f.x + Math.cos(a) * r, y: f.y + Math.sin(a) * r };
   }
 
+  // Destino de un bot que deambula: esconderse en la niebla, cazar cerca del jugador (en un mapa
+  // grande, si no, casi no se cruzan) o explorar.
+  function nextWaypoint() {
+    const r = Math.random(), p = world.player;
+    if (r < 0.45) return pointInFog();
+    if (r < 0.8 && p.alive) {
+      const a = rand(0, Math.PI * 2), d = rand(150, config.botSight);
+      return {
+        x: clamp(p.x + Math.cos(a) * d, 60, config.world.w - 60),
+        y: clamp(p.y + Math.sin(a) * d, 60, config.world.h - 60),
+      };
+    }
+    return randomPoint();
+  }
+
   function newWorld() {
     const W = config.world.w, H = config.world.h;
-    const fog = [
-      { x: W * 0.28, y: H * 0.35, r: 220 },
-      { x: W * 0.72, y: H * 0.58, r: 260, storm: true },
-      { x: W * 0.52, y: H * 0.16, r: 160 },
-      { x: W * 0.18, y: H * 0.8, r: 150 },
-    ];
-    for (const f of fog) f.r0 = f.r;
+    const layout = W >= 3000 ? FOG_LAYOUT_LARGE : FOG_LAYOUT_SMALL;
+    const fog = layout.map(([fx, fy, r, storm]) => ({ x: W * fx, y: H * fy, r, r0: r, storm: !!storm }));
     const player = makeTank(W / 2, H * 0.82, true, null);
     const bots = [];
     for (let i = 0; i < config.bots; i++) {
@@ -360,7 +379,7 @@
         // Acampando (normalmente dentro de la niebla).
         b.wait -= dt;
       } else {
-        if (!b.wp) b.wp = Math.random() < 0.6 ? pointInFog() : randomPoint();
+        if (!b.wp) b.wp = nextWaypoint();
         const a = Math.atan2(b.wp.y - b.y, b.wp.x - b.x);
         b.angle = a;
         b.x += Math.cos(a) * config.botSpeed * dt;
@@ -572,6 +591,7 @@
 
     // Niebla y tormenta (encima de todo lo del mundo)
     for (const f of world.fog) {
+      if (f.x + f.r < cam.x || f.x - f.r > cam.x + v.w || f.y + f.r < cam.y || f.y - f.r > cam.y + v.h) continue;
       const rgb = f.storm ? '190,120,200' : '150,160,185';
       const g = ctx.createRadialGradient(f.x, f.y, f.r * 0.55, f.x, f.y, f.r);
       g.addColorStop(0, 'rgba(' + rgb + ',0.55)');
@@ -648,6 +668,44 @@
     return lines;
   }
 
+  // Minimapa (abajo a la derecha): niebla, tormenta, tu tanque, la vista de la cámara y solo los bots
+  // que estás viendo (fuera de la niebla y cerca). Nunca muestra a los escondidos: eso es trabajo del radar.
+  function drawMinimap(v) {
+    const W = config.world.w, H = config.world.h;
+    const mw = Math.min(200, v.w * 0.3), s = mw / W, mh = H * s;
+    const mx = v.w - mw - 12, my = v.h - mh - 12, p = world.player;
+    ctx.fillStyle = 'rgba(8,10,20,0.75)';
+    ctx.fillRect(mx, my, mw, mh);
+    for (const f of world.fog) {
+      ctx.fillStyle = f.storm ? 'rgba(190,120,200,0.6)' : 'rgba(150,160,185,0.45)';
+      ctx.beginPath();
+      ctx.arc(mx + f.x * s, my + f.y * s, f.r * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(232,236,244,0.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(mx + Math.max(0, cam.x) * s, my + Math.max(0, cam.y) * s, Math.min(W, v.w) * s, Math.min(H, v.h) * s);
+    ctx.fillStyle = '#ff7a59';
+    for (const b of world.bots) {
+      if (!b.alive || (inFog(b) && b.revealed <= 0) || dist(b, p) > config.botSight * 1.5) continue;
+      ctx.fillRect(mx + b.x * s - 2, my + b.y * s - 2, 4, 4);
+    }
+    if (world.radarBot) {
+      ctx.strokeStyle = 'rgba(255,224,102,0.6)';
+      ctx.beginPath();
+      ctx.arc(mx + p.x * s, my + p.y * s, config.radarRange * s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (p.alive) {
+      ctx.fillStyle = world.cannon === 'quantum' ? '#b388ff' : '#4fc3f7';
+      ctx.beginPath();
+      ctx.arc(mx + p.x * s, my + p.y * s, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(232,236,244,0.4)';
+    ctx.strokeRect(mx, my, mw, mh);
+  }
+
   function drawOverlayText(v) {
     // Récord y bajas (arriba a la derecha; el HUD de UI va arriba a la izquierda)
     const r = Game.record;
@@ -711,6 +769,7 @@
       else if (world.lastResult) UIm.drawSectors(ctx, px, py, world.lastResult.result, world.lastResult.cannon);
     }
     if (UIm && UIm.drawHUD) UIm.drawHUD(ctx, hudState());
+    drawMinimap(v);
     drawOverlayText(v);
   }
 
@@ -763,8 +822,12 @@
     return typeof location !== 'undefined' && /[?&]demo\b/.test(location.search);
   }
 
+  // Se aplica antes de crear el mundo: la demo usa el mapa chico (ya probado) para que sea predecible.
+  function demoConfig() {
+    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+  }
+
   function setupDemo() {
-    Object.assign(config, { energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
     const f = world.fog[0], p = world.player, b = world.bots[0];
     p.x = f.x + f.r + 70; p.y = f.y;
     b.x = f.x; b.y = f.y; b.wait = 25; b.fireCd = 5;
@@ -777,6 +840,7 @@
     ctx = canvas.getContext('2d');
     if (!inputBound) bindInput();
     resize();
+    if (isDemo()) demoConfig();
     world = newWorld();
     if (isDemo()) setupDemo();
     Game.state = world;
