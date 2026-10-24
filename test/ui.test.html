@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pruebas de UI</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; background: #0e1220; color: #e8ecf4; margin: 16px; }
+    h1 { font-size: 18px; }
+    li { list-style: none; padding: 2px 0; }
+    .ok::before { content: "✔ "; color: #5be38a; }
+    .fail::before { content: "✘ "; color: #ff6b6b; }
+    .skip::before { content: "– "; color: #9aa4b8; }
+    small { color: #9aa4b8; }
+    #summary { font-weight: 600; margin: 8px 0 16px; }
+  </style>
+</head>
+<body>
+  <h1>Pruebas de UI (js/ui.js)</h1>
+  <div id="summary">Ejecutando…</div>
+  <ul id="out" style="padding:0"></ul>
+
+  <script src="mini-test.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="ui.spec.js"></script>
+  <script>
+    // Los overlays se montan en document.body; las pruebas lo limpian entre casos.
+    // Se ejecuta tras la carga para que el resultado se pinte en un nodo que las pruebas no tocan.
+    window.addEventListener('load', function () {
+      var out = document.getElementById('out'), sum = document.getElementById('summary');
+      var results = runTests();
+      document.body.innerHTML = '<h1>Pruebas de UI (js/ui.js)</h1><div id="summary"></div><ul id="out" style="padding:0"></ul>';
+      out = document.getElementById('out'); sum = document.getElementById('summary');
+      var c = { ok: 0, fail: 0, skip: 0 };
+      results.forEach(function (r) {
+        c[r.status]++;
+        var li = document.createElement('li');
+        li.className = r.status;
+        li.textContent = r.name;
+        if (r.detail) { var s = document.createElement('small'); s.textContent = ' — ' + r.detail; li.appendChild(s); }
+        out.appendChild(li);
+        if (r.status === 'fail') console.error(r.name + ': ' + r.detail);
+      });
+      sum.textContent = c.ok + ' ok · ' + c.fail + ' fallan · ' + c.skip + ' omitidas';
+      sum.style.color = c.fail ? '#ff6b6b' : '#5be38a';
+      document.title = (c.fail ? '✘ ' : '✔ ') + 'Pruebas de UI';
+    });
+  </script>
+</body>
+</html>
