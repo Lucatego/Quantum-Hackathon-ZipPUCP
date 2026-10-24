@@ -28,6 +28,10 @@ try {
   evalIn(read('test/mini-test.js'), 'mini-test.js');
   evalIn(process.env.UI_FILE ? fs.readFileSync(process.env.UI_FILE, 'utf8') : read('js/ui.js'), 'ui.js');
   evalIn(read('test/ui.spec.js'), 'ui.spec.js');
+  if (fs.existsSync(path.join(root, 'js/intro3d.js'))) {
+    evalIn(read('js/intro3d.js'), 'intro3d.js');
+    evalIn(read('test/intro3d.spec.js'), 'intro3d.spec.js');
+  }
 } catch (e) {
   console.error('No se pudo cargar: ' + (e && e.stack || e));
   process.exit(2);
