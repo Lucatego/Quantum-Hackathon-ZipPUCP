@@ -6,6 +6,56 @@
 > **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
 > Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
 
+## Pendientes al 15:50 (revisión de `main`)
+
+Ya está todo integrado: la fase 3 completa y la portada 3D de Gandy. Las pruebas pasan:
+- `selfTest`, contrato y contenido: OK;
+- UI: 55 de 55 con jsdom;
+- prueba de punta a punta tal como la carga `index.html`.
+
+Quedan estos puntos. Los de las secciones "Lo que necesita Gandy" y "Lo que necesita Alvaro" (más abajo) siguen vigentes.
+
+### GANDY: textos que quedaron viejos con la fase 3 (`js/ui.js`)
+Con las piezas, el k del cañón cuántico **sale del circuito**: Q/E solo ajusta el clásico, y `R` suelta la última pieza.
+
+1. **Línea 318**, pista de la pantalla de inicio. Reemplazar:
+   ```js
+   hero.appendChild(el('p', 'WASD mover · ← → apuntar · Espacio buscar · 1 / 2 cañón · Q / E k', 'hint'));
+   ```
+   por:
+   ```js
+   hero.appendChild(el('p', 'WASD mover · ← → apuntar · Espacio buscar · 1 / 2 cañón · Q / E k clásico · R soltar pieza', 'hint'));
+   ```
+2. **Línea 334**, diapositiva "Controles" de la guía. Reemplazar:
+   ```js
+   'Bajar o subir k: Q y E (de 0 a 3).' },
+   ```
+   por:
+   ```js
+   'Cañón clásico: Q y E bajan o suben k (de 0 a 3). Cañón cuántico: k es la cantidad de marcadores (M) de tu circuito; recoge piezas caminando sobre ellas y suelta la última con R.' },
+   ```
+3. **Línea 349**, última diapositiva de la guía. Contradice la tarjeta `interferencia` de Alvaro. Reemplazar:
+   ```js
+   'Es una simulación didáctica de 3 qubits: no es hardware cuántico ni una ventaja cuántica real.' }
+   ```
+   por:
+   ```js
+   'Es una simulación didáctica de 3 qubits, no hardware cuántico. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada, pero con 8 sectores esto no demuestra una ventaja práctica.' }
+   ```
+4. **`docs/GUIA.md:80`** (§7). Dice que el clásico "no es el mejor algoritmo posible", y la tarjeta `probClasica` dice lo contrario, que es lo correcto. Reemplazar la viñeta por:
+   ```md
+   - El clásico usa la **mejor estrategia clásica posible** para este problema: ningún método clásico supera (k+1)/8 con k consultas. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada; con 8 sectores es un ejemplo pedagógico, no una demostración de ventaja práctica.
+   ```
+
+Los números de línea de `docs/CAMBIOS-FINALES.md` (`ui.js:245`, `GUIA.md:79`) quedaron viejos: valen los de esta sección.
+
+### GANDY: el proyecto de video no se puede renderizar (`video/`)
+`video/package.json` ejecuta `remotion studio|still|render src/index.jsx`, pero **`video/src/index.jsx` no está en el repo**: `video/src/` solo tiene `data.json`. Por eso `npm run studio` y `npm run render` fallan.
+- Subir el código de la animación (`src/index.jsx` y sus componentes).
+- Revisar que `.gitignore` no lo esté excluyendo: hoy solo ignora `node_modules` y `out`.
+
+No afecta al juego, porque `video/` no se usa en GitHub Pages.
+
 ## Fase 3: estado al 15:35
 
 | Parte | Responsable | Estado |
@@ -195,9 +245,9 @@ El mouse sigue funcionando: al moverlo, vuelve a mandar la puntería, y al tocar
 
 ### Problemas a corregir antes del freeze
 1. **El juego se contradice sobre la "ventaja cuántica".**
-   - `js/ui.js:245` (última diapositiva de "Cómo jugar") dice "ni una ventaja cuántica real".
+   - `js/ui.js:349` (última diapositiva de "Cómo jugar") dice "ni una ventaja cuántica real".
    - La tarjeta `interferencia` de `content.js` dice, correctamente, que la ventaja en consultas está demostrada para la búsqueda no estructurada idealizada.
-   - `docs/GUIA.md:79` dice que el clásico "no es el mejor algoritmo posible", y `probClasica` dice lo contrario, que es lo correcto.
+   - `docs/GUIA.md:80` dice que el clásico "no es el mejor algoritmo posible", y `probClasica` dice lo contrario, que es lo correcto.
    - Usar la misma frase en los tres lugares: *"Es una simulación didáctica de 3 qubits. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada, pero con 8 sectores esto no demuestra una ventaja práctica."*
 2. **El pitch no cuenta qué hace el juego.** El borrador tiene un buen gancho y un buen cierre, pero:
    - Habla de "aprender inteligencia artificial / Quantum Machine Learning", y el prototipo **no tiene ML**: enseña **probabilidad clásica (muestreo, probabilidad condicional) vs. amplitudes e interferencia (Grover)**. El reto pide justo eso, "un concepto de Estadística/ML y su equivalente cuántico", y hay que decirlo con esas palabras. El QML va como **visión** (auto-calibración por descenso de gradiente = entrenamiento de un circuito variacional), no como algo que ya hace.
@@ -217,7 +267,7 @@ El mouse sigue funcionando: al moverlo, vuelve a mandar la puntería, y al tocar
 | 2:40–3:00 | Cierre | "Aprendes probabilidad cuántica porque te sirve para ganar" + su frase final + QR |
 
 **GANDY:**
-1. (5 min) Corregir `ui.js:245` y `GUIA.md` §7 con la frase de arriba.
+1. (5 min) Corregir `ui.js:349` y `GUIA.md:80` (§7) con la frase de arriba.
 2. (15 min, si da) Bloque de ruido en la pantalla final: búsquedas en tormenta, cuántas con `misreads > 0` y el acumulado de `history`.
 3. Probar en el celular con el QR.
 
