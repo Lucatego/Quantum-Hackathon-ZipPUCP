@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portada 3D: página de prueba</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0e1220; color: #e8ecf4; font-family: system-ui, sans-serif; overflow: hidden; }
+    #stage { position: fixed; inset: 0; }
+    #bar { position: fixed; left: 0; right: 0; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; align-items: center; }
+    #bar button { min-height: 44px; padding: 0 14px; font-size: 14px; border-radius: 8px; border: 1px solid #3a4260; background: #1a2038; color: inherit; }
+    #msg { font-size: 14px; color: #ffd166; }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="bar">
+    <button id="go">Iniciar</button>
+    <button id="no">Detener</button>
+    <span id="msg"></span>
+  </div>
+
+  <!-- quantum.js es opcional: sin él la escena usa las amplitudes del contrato -->
+  <script src="../js/quantum.js"></script>
+  <script src="../js/vendor/three.min.js"></script>
+  <script src="../js/intro3d.js"></script>
+  <script>
+    var msg = document.getElementById('msg');
+    function go() {
+      var ok = Intro3D.start(document.getElementById('stage'));
+      msg.textContent = ok ? (window.Quantum ? 'Datos: Quantum.runQuantum (k=2)' : 'Datos: respaldo del contrato (sin Quantum)') : 'No se pudo iniciar (sin WebGL o sin THREE): se vería el inicio 2D';
+    }
+    document.getElementById('go').onclick = go;
+    document.getElementById('no').onclick = function () { Intro3D.stop(); msg.textContent = 'Detenida'; };
+    go();
+  </script>
+</body>
+</html>

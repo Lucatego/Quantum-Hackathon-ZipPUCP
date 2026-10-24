@@ -39,7 +39,7 @@ Remotion **no entra al runtime del juego**: vive en `video/` con su propio `pack
 
 Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel pero no son necesarias para que funcione.
 
-### Fase 0: dirección y acuerdo (15 min)
+### Fase 0: dirección y acuerdo (15 min) — HECHA en `feat/ui`
 - **Paleta:** reutilizar la de `ui.js` (`COLOR`): cian `#4cc9f0` (amplitud +), rosa `#ff6b9d` (amplitud −), amarillo `#ffd166` (probabilidad), verde `#80ed99`, fondo `#0e1220`. Un solo lenguaje visual entre portada, juego y pitch.
 - **Contrato nuevo (aditivo y opcional):**
   ```js
@@ -50,7 +50,7 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 - **Archivos nuevos (dueño: Gandy):** `js/intro3d.js`, `js/vendor/three.min.js`, `test/intro3d.html`. `index.html` solo suma dos `<script>` (avisar a quien integra).
 - **Decisión de Three.js sin build:** las versiones recientes solo publican módulos ES, que **no cargan con doble clic (`file://`)**. Para conservar "abre con doble clic" se usa una versión anterior con build UMD (`three.min.js`, existe hasta r159 aprox.; **confirmar la versión exacta al descargar**) y se **guarda una copia local en `js/vendor/`**. Eso además evita depender de un CDN con el wifi de la demo.
 
-### Fase 1: escena base (40 min)
+### Fase 1: escena base (40 min) — HECHA en `feat/ui` (render visual pendiente de verificar en navegador)
 - Cámara en perspectiva inclinada ~35° mirando al tanque, iluminación hemisférica + direccional suave.
 - 8 columnas `CylinderGeometry`/wedge con la altura = amplitud, color por signo, orden y sentido iguales a `drawSectors` (sector `i` = `[i·45°, (i+1)·45°)`, horario desde +x).
 - Conos de probabilidad translúcidos encima.

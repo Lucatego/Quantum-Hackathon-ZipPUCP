@@ -148,7 +148,9 @@
     s.textContent =
       '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-start;justify-content:center;overflow:auto;' +
       'background:#0e1220;color:' + COLOR.text + ';font:15px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
-      '#' + OVERLAY_ID + ' .box{width:100%;max-width:640px;margin:auto}' +
+      '#' + OVERLAY_ID + ' .box{position:relative;z-index:1;width:100%;max-width:640px;margin:auto}' +
+      '#' + OVERLAY_ID + ' .stage{position:fixed;inset:0;z-index:0;pointer-events:none}' +
+      '#' + OVERLAY_ID + '.intro .box{background:rgba(14,18,32,.62);border-radius:16px;padding:16px}' +
       '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
       '#' + OVERLAY_ID + ' ul{margin:8px 0 0 18px;padding:0}' +
@@ -179,16 +181,38 @@
     return e;
   }
 
+  // Limpieza del overlay vigente (p. ej. detener la portada 3D). Corre al cerrarlo o al ser reemplazado.
+  var overlayCleanup = null;
+  function runCleanup() {
+    var f = overlayCleanup; overlayCleanup = null;
+    if (f) { try { f(); } catch (e) { /* la limpieza nunca debe romper el juego */ } }
+  }
+
   // Crea el overlay (reemplaza uno previo) y devuelve {root, box, close}.
   function openOverlay() {
     injectStyle();
+    runCleanup();
     var old = document.getElementById(OVERLAY_ID);
     if (old) old.remove();
     var root = el('div'); root.id = OVERLAY_ID;
     var box = el('div', undefined, 'box');
     root.appendChild(box);
     document.body.appendChild(root);
-    return { box: box, close: function () { root.remove(); } };
+    return { root: root, box: box, close: function () { runCleanup(); root.remove(); } };
+  }
+
+  // Portada 3D opcional detrás del inicio. Si Intro3D falta o no puede (sin WebGL), queda el inicio 2D.
+  function mountIntro(o) {
+    var I = window.Intro3D;
+    if (!I || typeof I.start !== 'function') return;
+    try {
+      var stage = el('div', undefined, 'stage');
+      o.root.insertBefore(stage, o.box);
+      if (I.start(stage)) {
+        o.root.classList.add('intro');
+        overlayCleanup = function () { if (typeof I.stop === 'function') I.stop(); };
+      } else stage.remove();
+    } catch (e) { /* sin portada 3D */ }
   }
 
   // Botón de un solo uso: cierra el overlay y llama cb una vez.
@@ -218,6 +242,7 @@
 
   function showStart(onPlay) {
     var o = openOverlay();
+    mountIntro(o);
     var lines = window.Content && Array.isArray(window.Content.start) && window.Content.start.length ? window.Content.start : DEFAULT_START;
     var myths = window.Content && Array.isArray(window.Content.myths) ? window.Content.myths : [];
     var truths = window.Content && Array.isArray(window.Content.truths) ? window.Content.truths : [];

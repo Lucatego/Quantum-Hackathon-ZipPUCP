@@ -264,6 +264,49 @@
     assert(buttons().length >= 1, 'falta el botón Jugar');
   });
 
+  dom('showStart: monta la portada 3D si Intro3D arranca y la detiene al pulsar Jugar', function () {
+    var saved = window.Intro3D, starts = 0, stops = 0, host = null;
+    try {
+      window.Intro3D = { start: function (c) { starts++; host = c; return true; }, stop: function () { stops++; } };
+      var played = 0;
+      UI.showStart(function () { played++; });
+      assertEq(starts, 1, 'start');
+      assert(host && host.nodeType === 1, 'start debe recibir un elemento contenedor');
+      assert(document.getElementById('ui-overlay').contains(host), 'el contenedor debe estar dentro del overlay');
+      buttons()[0].click();
+      assertEq(stops, 1, 'stop al jugar');
+      assertEq(played, 1, 'onPlay');
+    } finally { window.Intro3D = saved; }
+  });
+
+  dom('showStart: Intro3D que no puede (false) o que lanza no rompe el inicio 2D', function () {
+    var saved = window.Intro3D;
+    try {
+      window.Intro3D = { start: function () { return false; }, stop: function () { throw new Error('no debería llamarse'); } };
+      UI.showStart(function () {});
+      assert(buttons().length >= 1, 'falta el botón Jugar con start=false');
+      assertEq(document.querySelectorAll('#ui-overlay .stage').length, 0, 'el contenedor vacío debe retirarse');
+      document.body.innerHTML = '';
+      window.Intro3D = { start: function () { throw new Error('boom'); }, stop: function () {} };
+      UI.showStart(function () {});
+      assert(buttons().length >= 1, 'falta el botón Jugar con start que lanza');
+    } finally { window.Intro3D = saved; }
+  });
+
+  dom('showStart: abrir la guía detiene la portada 3D y volver al inicio la reinicia', function () {
+    var saved = window.Intro3D, starts = 0, stops = 0;
+    try {
+      window.Intro3D = { start: function () { starts++; return true; }, stop: function () { stops++; } };
+      UI.showStart(function () {});
+      btn(/Cómo jugar/).click();
+      assertEq(stops, 1, 'stop al abrir la guía');
+      btn(/Saltar/).click();
+      assertEq(starts, 2, 'start al volver al inicio');
+      btn(/^Jugar$/).click();
+      assertEq(stops, 2, 'stop al jugar');
+    } finally { window.Intro3D = saved; }
+  });
+
   dom('showStart: usa las líneas de Content.start', function () {
     window.Content = { start: ['LINEA-UNO', 'LINEA-DOS', 'LINEA-TRES'] };
     UI.showStart(function () {});
