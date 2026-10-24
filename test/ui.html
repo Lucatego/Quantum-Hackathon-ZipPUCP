@@ -78,6 +78,7 @@
     [0, 1, 2, 3].forEach(function (k) { btns.push([add('k = ' + k, function () { state.k = k; }, 'k'), function () { return state.k === k; }]); });
     function refresh() { btns.forEach(function (p) { p[0].className = p[1]() ? 'on' : ''; }); draw(); }
     add('Pantalla inicio', function () { UI.showStart(function () {}); }, 'o');
+    add('Guía: cómo jugar', function () { UI.showGuide(function () {}); }, 'o');
     add('Pantalla final', function () { UI.showEnd(fakeLog(), function () {}); }, 'o');
     window.addEventListener('resize', draw);
     refresh();
