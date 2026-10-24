@@ -48,7 +48,7 @@
   <p class="note">
     <b>Cómo leerlo.</b> Sin ruido, 2 iteraciones llegan a ~95 % y con 3 el acierto cae: te pasaste (sobre-rotación). Con el ruido del circuito, el máximo baja a ~59 % y k=1 y k=2 casi empatan, pero el cuántico sigue por encima del clásico para k=1 y k=2 (con k=3 queda por debajo).<br>
     <b>Verificación.</b> Columnas 2 y 3: simulador del juego contra Qiskit <code>Statevector</code>, error ≈ 1e-15.<br>
-    *<b>Límite:</b> el desfase es un modelo de un solo parámetro (σ = 0,46), ajustado al perfil de ruido de un procesador IBM simulado (FakeSherbrooke en Qiskit Aer, 8192 disparos por k). No es una medición en hardware real. La ventaja cuadrática en consultas es real para la búsqueda no estructurada idealizada; con 8 sectores esto es un ejemplo pedagógico, no una demostración de ventaja práctica.
+    *<b>Límite:</b> la columna 4 es Qiskit Aer con el modelo de ruido de un procesador IBM simulado (FakeSherbrooke, 8192 disparos por k). El juego lo aproxima con un desfase de un solo parámetro (σ = 0,46) y, para que se pueda jugar, usa un tercio de esa intensidad (con k = 2, ~90 %). No es una medición en hardware real. La ventaja cuadrática en consultas es real para la búsqueda no estructurada idealizada; con 8 sectores esto es un ejemplo pedagógico, no una demostración de ventaja práctica.
   </p>
 </div>
 
