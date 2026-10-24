@@ -25,9 +25,17 @@
     costPerQuery: 20,      // igual para una consulta clásica que para una iteración cuántica
     slowmoDuration: 1.1,   // segundos reales que se muestran las barras antes del tiro
     slowmoScale: 0.12,
-    phaseNoise: 0.15,      // ruido del circuito (solo cuántico). Provisional hasta el perfil de Qiskit Aer
+    // Ruido del circuito (solo cuántico). En start() se toma como una fracción del nivel calibrado con
+    // FakeSherbrooke (Quantum.CALIBRATED_PHASE_NOISE = 0.46): 0.33 → k=2 ≈ 90 %; 1.0 → k=2 ≈ 60 % (nivel completo).
+    phaseNoiseScale: 0.33,
+    phaseNoise: 0.15,      // valor de respaldo si Quantum no trae la calibración
     sensorFlip: 0,         // ruido del sensor en niebla normal (afecta a ambos)
     stormSensorFlip: 0.25, // ruido del sensor dentro de la tormenta (afecta a ambos)
+    // La niebla se expande por fases (como la zona de un battle royale): más escondites, más búsquedas.
+    fogPhaseEvery: 25,     // segundos de juego entre expansiones
+    fogPhaseStep: 0.15,    // cuánto crece el radio en cada fase (× radio inicial)
+    fogMaxScale: 1.6,      // tamaño máximo (× radio inicial)
+    fogGrowSpeed: 0.05,    // velocidad de crecimiento durante una expansión (escala por segundo)
     botSearchCooldown: 3.5,
     botSearchDamage: 10,
   };
@@ -146,6 +154,7 @@
       { x: W * 0.52, y: H * 0.16, r: 160 },
       { x: W * 0.18, y: H * 0.8, r: 150 },
     ];
+    for (const f of fog) f.r0 = f.r;
     const player = makeTank(W / 2, H * 0.82, true, null);
     const bots = [];
     for (let i = 0; i < config.bots; i++) {
@@ -158,6 +167,7 @@
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null, radarBot: null,
       kills: 0,
+      fogScale: 1, fogTarget: 1, nextFogAt: config.fogPhaseEvery,
       time: 0, shake: 0, msg: '', msgT: 0,
       over: false, endT: 0,
     };
@@ -432,6 +442,19 @@
     }
   }
 
+  function updateFog(dt) {
+    const w = world;
+    if (w.time >= w.nextFogAt) {
+      w.nextFogAt += config.fogPhaseEvery;
+      if (w.fogTarget < config.fogMaxScale) {
+        w.fogTarget = Math.min(config.fogMaxScale, w.fogTarget + config.fogPhaseStep);
+        say('¡La niebla se expande!');
+      }
+    }
+    if (w.fogScale < w.fogTarget) w.fogScale = Math.min(w.fogTarget, w.fogScale + config.fogGrowSpeed * dt);
+    for (const f of w.fog) f.r = f.r0 * w.fogScale;
+  }
+
   function update(dtReal) {
     const w = world;
     let dt = dtReal;
@@ -443,6 +466,7 @@
     w.time += dt;
     w.energy = Math.min(config.energyMax, w.energy + config.energyRegen * dt);
     updatePlayer(dt);
+    updateFog(dt);
     updateBots(dt);
     updateBullets(dt);
     w.radarBot = w.player.alive ? radarTarget() : null;
@@ -632,6 +656,12 @@
     ctx.fillStyle = 'rgba(232,236,244,0.8)';
     ctx.fillText('Bajas: ' + world.kills, v.w - 16, 24);
     ctx.fillText('Récord: ' + r.kills + ' bots' + (r.quantumAcc !== null ? ' · ' + Math.round(r.quantumAcc * 100) + '% cuántico' : ''), v.w - 16, 42);
+    if (world.fogScale < world.fogTarget) {
+      ctx.fillStyle = '#d6b3ff';
+      ctx.fillText('La niebla se está expandiendo…', v.w - 16, 60);
+    } else if (world.fogTarget < config.fogMaxScale) {
+      ctx.fillText('La niebla se expande en ' + Math.ceil(world.nextFogAt - world.time) + ' s', v.w - 16, 60);
+    }
 
     if (world.msgT > 0) {
       ctx.globalAlpha = Math.min(1, world.msgT * 2);
@@ -727,12 +757,28 @@
     requestAnimationFrame(frame);
   }
 
+  // Modo demo (?demo en la URL): para la presentación en vivo. Arranca junto a la niebla con un bot
+  // escondido y con más energía y menos daño. No toca la física: ambos cañones siguen pagando lo mismo.
+  function isDemo() {
+    return typeof location !== 'undefined' && /[?&]demo\b/.test(location.search);
+  }
+
+  function setupDemo() {
+    Object.assign(config, { energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+    const f = world.fog[0], p = world.player, b = world.bots[0];
+    p.x = f.x + f.r + 70; p.y = f.y;
+    b.x = f.x; b.y = f.y; b.wait = 25; b.fireCd = 5;
+  }
+
   function start() {
     canvas = document.getElementById('game');
+    const cal = window.Quantum && window.Quantum.CALIBRATED_PHASE_NOISE;
+    if (typeof cal === 'number') config.phaseNoise = +(cal * config.phaseNoiseScale).toFixed(3);
     ctx = canvas.getContext('2d');
     if (!inputBound) bindInput();
     resize();
     world = newWorld();
+    if (isDemo()) setupDemo();
     Game.state = world;
     Game.log = [];
     hintQueue.length = 0;
