@@ -150,7 +150,32 @@
       'background:#0e1220;color:' + COLOR.text + ';font:15px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
       '#' + OVERLAY_ID + ' .box{position:relative;z-index:1;width:100%;max-width:640px;margin:auto}' +
       '#' + OVERLAY_ID + ' .stage{position:fixed;inset:0;z-index:0;pointer-events:none}' +
-      '#' + OVERLAY_ID + '.intro .box{background:rgba(14,18,32,.62);border-radius:16px;padding:16px}' +
+      // Inicio tipo .io: escena a un lado (arriba en celular), título + frase + Jugar grande, el resto plegado.
+      '#' + OVERLAY_ID + '.intro{padding-top:calc(46vh + 8px)}' +
+      '#' + OVERLAY_ID + '.intro .stage{inset:0 0 auto 0;height:46vh}' +
+      '#' + OVERLAY_ID + '.intro .box{margin:0 auto;max-width:560px}' +
+      '@media (min-width:860px){' +
+        '#' + OVERLAY_ID + '.intro{padding:16px 16px 16px 6vw;align-items:center}' +
+        '#' + OVERLAY_ID + '.intro .stage{inset:0 0 0 40%;height:auto}' +
+        '#' + OVERLAY_ID + '.intro .box{margin:0;max-width:470px}' +
+      '}' +
+      '#' + OVERLAY_ID + ' .hero{display:flex;flex-direction:column;gap:10px}' +
+      '#' + OVERLAY_ID + ' .eyebrow{margin:0;font-size:14px;font-weight:600;letter-spacing:.14em;color:' + COLOR.prob + '}' +
+      '#' + OVERLAY_ID + ' .hero h1{margin:0;font-size:clamp(40px,9vw,72px);line-height:1;letter-spacing:.04em}' +
+      '#' + OVERLAY_ID + ' .tagline{margin:0;font-size:17px;opacity:.92}' +
+      '#' + OVERLAY_ID + ' .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}' +
+      '#' + OVERLAY_ID + ' .actions button{margin:0}' +
+      '#' + OVERLAY_ID + ' button.play{flex:1 1 220px;min-height:56px;font-size:20px;letter-spacing:.04em;box-shadow:0 0 24px rgba(76,201,240,.35)}' +
+      '#' + OVERLAY_ID + ' .chips{display:flex;flex-wrap:wrap;gap:8px}' +
+      '#' + OVERLAY_ID + ' .chip{font-size:14px;padding:3px 10px;border:1px solid ' + COLOR.guide + ';border-radius:999px;opacity:.9}' +
+      '#' + OVERLAY_ID + ' details.more{margin-top:4px}' +
+      '#' + OVERLAY_ID + ' .hint{margin:4px 0 0;font-size:14px;opacity:.7}' +
+      '@keyframes ui-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}' +
+      '#' + OVERLAY_ID + '.intro .hero>*{animation:ui-rise .7s ease-out both}' +
+      '#' + OVERLAY_ID + '.intro .hero>*:nth-child(2){animation-delay:.08s}' +
+      '#' + OVERLAY_ID + '.intro .hero>*:nth-child(3){animation-delay:.16s}' +
+      '#' + OVERLAY_ID + '.intro .hero>*:nth-child(4){animation-delay:.24s}' +
+      '@media (prefers-reduced-motion:reduce){#' + OVERLAY_ID + ' .hero>*{animation:none!important}}' +
       '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
       '#' + OVERLAY_ID + ' ul{margin:8px 0 0 18px;padding:0}' +
@@ -246,17 +271,34 @@
     var lines = window.Content && Array.isArray(window.Content.start) && window.Content.start.length ? window.Content.start : DEFAULT_START;
     var myths = window.Content && Array.isArray(window.Content.myths) ? window.Content.myths : [];
     var truths = window.Content && Array.isArray(window.Content.truths) ? window.Content.truths : [];
-    o.box.appendChild(el('h1', 'COLLAPSE'));
-    lines.forEach(function (l) { o.box.appendChild(el('p', String(l))); });
-    var bad = renderMessagePanel('Qué NO se debe creer', myths);
-    if (bad) o.box.appendChild(bad);
-    var good = renderMessagePanel('Qué sí queremos promover', truths);
-    if (good) o.box.appendChild(good);
-    o.box.appendChild(onceButton('Jugar', o, onPlay));
+
+    // Primer vistazo: título, una frase, Jugar. Lo demás, plegado.
+    var hero = el('div', undefined, 'hero');
+    hero.appendChild(el('p', 'CLÁSICO VS. CUÁNTICO', 'eyebrow'));
+    hero.appendChild(el('h1', 'COLLAPSE'));
+    hero.appendChild(el('p', String(lines[0]), 'tagline'));
+    var actions = el('div', undefined, 'actions');
+    var play = onceButton('Jugar', o, onPlay); play.classList.add('play');
+    actions.appendChild(play);
     var how = el('button', 'Cómo jugar', 'alt');
     how.type = 'button';
     how.addEventListener('click', function () { showGuide(function () { showStart(onPlay); }); });
-    o.box.appendChild(how);
+    actions.appendChild(how);
+    hero.appendChild(actions);
+    var chips = el('div', undefined, 'chips');
+    ['8 sectores', 'Mismo sensor', 'Misma energía'].forEach(function (c) { chips.appendChild(el('span', c, 'chip')); });
+    hero.appendChild(chips);
+
+    var more = el('details', undefined, 'more');
+    more.appendChild(el('summary', 'Más sobre el juego'));
+    lines.slice(1).forEach(function (l) { more.appendChild(el('p', String(l))); });
+    var bad = renderMessagePanel('Qué NO se debe creer', myths);
+    if (bad) more.appendChild(bad);
+    var good = renderMessagePanel('Qué sí queremos promover', truths);
+    if (good) more.appendChild(good);
+    hero.appendChild(more);
+    hero.appendChild(el('p', 'WASD mover · ← → apuntar · Espacio buscar · 1 / 2 cañón · Q / E k', 'hint'));
+    o.box.appendChild(hero);
   }
 
   // ---- Guía "Cómo jugar" (plan-guia-en-juego, fase 1) ----
@@ -267,8 +309,8 @@
       'El radar te avisa de que está cerca, pero no en cuál de los 8 sectores que rodean tu tanque.\n' +
       'Disparar a ciegas acierta 1 de cada 8 veces (12,5 %).' },
     { titulo: 'Controles', texto:
-      'Mover: WASD o flechas.\n' +
-      'Apuntar: mouse. Disparo normal: clic izquierdo.\n' +
+      'Mover: WASD. Apuntar: mouse, o ← → sin mouse (↑ ↓ mueven la vista).\n' +
+      'Disparo normal: clic izquierdo o F.\n' +
       'Buscar en la niebla: Espacio o clic derecho (solo con el radar encendido).\n' +
       'Cañón clásico o cuántico: teclas 1 y 2.\n' +
       'Bajar o subir k: Q y E (de 0 a 3).' },

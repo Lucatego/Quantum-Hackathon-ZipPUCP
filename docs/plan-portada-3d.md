@@ -60,7 +60,7 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 
 **Hecho cuando:** el anillo aparece detrás del overlay y Jugar sigue funcionando.
 
-### Fase 2: animación narrativa (40 min)
+### Fase 2: animación narrativa (40 min) — HECHA en `feat/ui` (sin verificar visualmente)
 - Línea de tiempo en JS (sin librería): interpola entre los estados reales de k = 0, marcador, k = 1, 2, 3.
 - Subtítulos cortos sincronizados (sin cifras inventadas: solo las de la tabla 8.4).
 - Niebla con partículas (`Points`) y título con revelado CSS.
@@ -108,3 +108,8 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 2. ¿Hasta qué fase? Recomendado: **0, 1, 2 y 5**.
 3. ¿Se aprueba añadir `js/intro3d.js` y `js/vendor/three.min.js` y dos `<script>` en `index.html`? (Lo toca quien integra.)
 4. ¿Quién hace la fase 4 si se hace? Es independiente y se puede paralelizar.
+
+## Cambios posteriores
+- **Inicio reordenado (referencia: .io como Slither/Agar/Surviv):** título + una frase + **Jugar** grande + "Cómo jugar", chips de contexto y el resto en un bloque plegable "Más sobre el juego". La escena ocupa la derecha en escritorio (≥ 860 px) y la franja superior en celular, para no tapar el texto.
+- **Fase 2 hecha:** bucle k = 0 → marcador → k = 1 → 2 → 3 con subtítulos con cifras del simulador y niebla de partículas; título con entrada animada.
+- **Respaldo exacto:** sin `Quantum` la escena usa la forma cerrada de Grover (sin((2k+1)θ)), que da 12,5 / 78,1 / 94,5 / 33,0 %.

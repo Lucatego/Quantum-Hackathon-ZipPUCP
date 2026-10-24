@@ -17,9 +17,10 @@ Un tanque que debe **encontrar y acertar a un enemigo escondido en la niebla**, 
 ## 3. Controles
 | Acción | Tecla / botón |
 |---|---|
-| Moverte | `WASD` o flechas |
-| Apuntar | Mouse |
-| Disparo normal | Clic izquierdo |
+| Moverte | `WASD` (las flechas ya no mueven) |
+| Apuntar | Mouse, o `←` `→` para girar el cañón sin mouse |
+| Mover la vista | `↑` `↓` (la cámara mira más lejos hacia donde apuntas / vuelve) |
+| Disparo normal | Clic izquierdo o `F` |
 | Cañón clásico / cuántico | `1` / `2` |
 | Bajar / subir **k** (0 a 3) | `Q` / `E` |
 | **Disparo de búsqueda** | `Espacio` o clic derecho |

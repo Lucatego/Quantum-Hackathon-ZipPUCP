@@ -307,6 +307,28 @@
     } finally { window.Intro3D = saved; }
   });
 
+  dom('showStart: primer vistazo = título, una frase y Jugar; el resto va plegado', function () {
+    window.Content = { start: ['FRASE-UNO', 'FRASE-DOS', 'FRASE-TRES'], myths: ['MITO-1'], truths: ['VERDAD-1'] };
+    UI.showStart(function () {});
+    var more = document.querySelector('#ui-overlay details.more');
+    assert(more, 'falta el bloque plegable');
+    assert(!more.contains(document.querySelector('#ui-overlay h1')), 'el título no debe ir plegado');
+    var tag = document.querySelector('#ui-overlay .tagline');
+    assertEq(tag.textContent, 'FRASE-UNO', 'la frase principal es la primera línea');
+    assert(!more.contains(tag), 'la frase principal no debe ir plegada');
+    assert(!more.contains(buttons()[0]) && buttons()[0].textContent === 'Jugar', 'Jugar debe verse sin desplegar nada');
+    ['FRASE-DOS', 'FRASE-TRES', 'MITO-1', 'VERDAD-1'].forEach(function (t) { assert(more.textContent.indexOf(t) >= 0, 'falta en el bloque plegado: ' + t); });
+    assert(!more.open, 'el bloque debe empezar cerrado');
+  });
+
+  dom('showStart: orden del primer vistazo (título, frase, botones) y hay ayuda de teclas', function () {
+    window.Content = undefined;
+    UI.showStart(function () {});
+    var hero = document.querySelector('#ui-overlay .hero'), kids = Array.prototype.map.call(hero.children, function (c) { return c.className || c.tagName; });
+    assert(kids.indexOf('H1') >= 0 && kids.indexOf('tagline') > kids.indexOf('H1') && kids.indexOf('actions') > kids.indexOf('tagline'), 'orden inesperado: ' + kids.join(','));
+    assert(/WASD/.test(document.querySelector('#ui-overlay .hint').textContent), 'falta la ayuda de controles');
+  });
+
   dom('showStart: usa las líneas de Content.start', function () {
     window.Content = { start: ['LINEA-UNO', 'LINEA-DOS', 'LINEA-TRES'] };
     UI.showStart(function () {});
