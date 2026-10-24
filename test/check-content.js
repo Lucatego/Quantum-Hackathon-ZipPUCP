@@ -25,7 +25,13 @@ if (!C) { console.log('ERROR      window.Content no está definido'); process.ex
 // ---- Estructura ----
 var CARDS = ['probClasica', 'amplitud', 'interferencia', 'sobreRotacion', 'ruidoDatos', 'ruidoCircuito', 'pocasPartidas'];
 var HINTS = ['primeraBusqueda', 'primerCuantico', 'aciertoCuantico', 'sobreRotacion', 'tormenta', 'ruidoCircuito', 'kCero'];
+var PROMO_SECTIONS = ['myths', 'truths'];
 if (!Array.isArray(C.start) || C.start.length !== 3) errors.push('Content.start debe tener 3 líneas');
+PROMO_SECTIONS.forEach(function (k) {
+  var arr = C[k];
+  if (!Array.isArray(arr) || arr.length < 2) errors.push('Content.' + k + ' debe ser un arreglo con al menos 2 frases');
+  else if (arr.some(function (s) { return !String(s || '').trim(); })) errors.push('Content.' + k + ' tiene entradas vacías');
+});
 CARDS.forEach(function (k) {
   var c = C.cards && C.cards[k];
   if (!c) return errors.push('falta la tarjeta ' + k);
