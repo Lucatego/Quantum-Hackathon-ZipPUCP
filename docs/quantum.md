@@ -65,7 +65,7 @@ El sensor se consulta **una vez por consulta (clásico) o una vez por iteración
 
 **Frase para el pitch (tal cual):** *"el desfase es un modelo de un solo parámetro, ajustado al perfil de ruido de un procesador IBM simulado"*. No decir "ruido real de IBM".
 
-**σ recomendada para `Game.config.phaseNoise`: `Quantum.CALIBRATED_PHASE_NOISE = 0.46`** (reproduce el perfil a ≤ 4 puntos de acierto en todo k). Con esa σ el cuántico con k=2 baja a ~60 %, que sigue siendo mejor que el clásico (37,5 %), pero ya no llega al 94,5 % ideal. Si se quiere que k=2 todavía impresione, usar una fracción (p. ej. 0,15 ≈ 90 % en k=2).
+**σ recomendada para `Game.config.phaseNoise`: `Quantum.CALIBRATED_PHASE_NOISE = 0.46`** (reproduce el perfil a ≤ 4 puntos de acierto en todo k). Con esa σ el cuántico con k=2 baja a ~60 %, que sigue siendo mejor que el clásico (37,5 %), pero ya no llega al 94,5 % ideal. **Decisión tomada en el juego:** `Game.config.phaseNoiseScale = 0.33`, es decir σ ≈ 0,152 (un tercio de la calibración), para que se pueda jugar: con k = 2 acierta ~90 %, y con k = 1 / k = 3, ~76 % / ~32 %. Con la escala 1,0 se vería el nivel completo (k = 2 ≈ 60 %). En el pitch hay que decir las dos cosas: la curva de IBM es la de la slide y el juego usa un tercio de esa intensidad. Con el ruido completo, k = 1 y k = 2 **empatan** (~59 %); el óptimo no "baja de 2 a 1".
 
 ### Resultado: `misreads`
 
