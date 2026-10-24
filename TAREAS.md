@@ -2,6 +2,146 @@
 
 > Quedan **2 horas** para la entrega. Lo que se evalúa es un **prototipo funcional y una buena idea/pitch**, no el sistema completo.
 > Brief completo: [`INDICACIONES.md`](INDICACIONES.md).
+>
+> **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
+> Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
+
+## Estado al 13:45
+
+| Pieza | Responsable | Estado |
+|---|---|---|
+| `js/quantum.js` + `test/quantum.html` | Avix | Listo. `selfTest` en verde: tabla 8.4 con error ~1e-16 |
+| `qiskit/validate.py` + `fixtures/statevector_cases.json` | Avix | Listo. Coincide con el JS hasta 2e-15 |
+| `toQiskit(k)` | Avix | Listo. El circuito exportado da 78,1 / 94,5 / 33,0 % en Qiskit |
+| `js/game.js` + `test/game.html` | Lucas | Listo. Partida completa con los módulos reales |
+| `js/ui.js` + tests | Gandy | Listo. 15 pruebas en Node; 24 con jsdom/navegador |
+| GitHub Pages | Lucas | Activo: https://lucatego.github.io/Quantum-Hackathon-ZipPUCP/ |
+| Integración en `main` | Todos | Hecha (`index.html` carga los módulos) |
+| `js/content.js` | Alvaro | **Falta.** Sin él, la pantalla final no muestra tarjeta educativa |
+| Slides y guion | Alvaro | **Falta.** `pitch/` tiene una sola línea |
+| Ruido en la partida | Lucas | **Falta.** El simulador lo soporta, pero el juego lo tiene en 0 |
+| `docs/GUIA.md` (guía para jugar e integrar) | Gandy | Lista en `feat/ui`, **falta el PR a `main`**. Describe el contrato v1; hay que actualizarla con el v2 al cierre |
+| Textos con error conceptual | Avix | **Corregir.** El comentario de `toQiskit` dice que el sector "debería dominar", y no es así con k=0 ni con k=3 |
+
+---
+
+## Fase 2: contenidos (13:50 → 14:35)
+
+Objetivo: que el jugador **vea y entienda** lo que pasa. Para eso hacen falta tarjetas, pistas en el momento justo, los dos tipos de ruido activos, la diferencia entre amplitud y probabilidad, y un pitch con evidencia.
+
+Las tareas siguen siendo **independientes**. Todo lo nuevo del contrato es **opcional y compatible hacia atrás**: si alguien no termina, el juego sigue funcionando.
+
+**Ramas de esta fase:** `feat/quantum-v2`, `feat/game-v2`, `feat/ui-v2` y `feat/content` (salen de `main` actualizado).
+
+### Contrato v2 (solo agrega campos)
+```js
+// Quantum (Avix): el resultado dice cuántas veces el sensor se equivocó
+Quantum.runQuantum(...)   // → { amps, probs, theory, misreads: número }
+Quantum.runClassical(...) // → { probs, discarded, found, theory, misreads: número }
+
+// Game (Lucas): cada entrada del log trae el contexto del ruido
+Game.log[i] = { cannon, k, target, shot, hit, theory, t,
+                zone: 'niebla' | 'tormenta', sensorFlip, phaseNoise, misreads }
+Game.history  // todas las búsquedas de la sesión (varias partidas)
+UI.showEnd(log, onReplay, history)  // el 3er parámetro es nuevo y opcional
+
+// Content (Alvaro): pistas cortas que Game muestra UNA vez por sesión
+Content.hints = { primeraBusqueda, primerCuantico, aciertoCuantico, sobreRotacion,
+                  tormenta, ruidoCircuito, kCero }   // 1 línea cada una
+```
+**Cuándo dispara Game cada pista:**
+
+| Pista | Cuándo |
+|---|---|
+| `primeraBusqueda` | primera vez que el radar detecta a alguien |
+| `primerCuantico` | primer disparo con el cañón cuántico |
+| `aciertoCuantico` | primer acierto cuántico con k ≥ 1 |
+| `sobreRotacion` | primer fallo cuántico con k = 3 |
+| `tormenta` | primer disparo de búsqueda dentro de la tormenta |
+| `ruidoCircuito` | primer fallo cuántico con k = 2 |
+| `kCero` | primer disparo con k = 0 |
+
+Si `Content.hints[clave]` no existe, la pista no se muestra.
+
+### AVIX: rigor y ruido real (`js/quantum.js`, `qiskit/`)
+1. **(5 min) Textos.**
+   - En el comentario final de `toQiskit`, reemplazar "debería dominar" por la probabilidad teórica para ese k (ej. "con k=3 la teoría da 33 %: ¡te pasaste de iteraciones!").
+   - Corregir el comentario del difusor sobre |000⟩ (no devuelve |000⟩).
+2. **(5 min) `misreads`:** contar en `runQuantum` y `runClassical` cuántas consultas percibieron un sector equivocado.
+3. **(25 min) `qiskit/noise_profile.py`:**
+   - Correr los circuitos k = 0..3 en Qiskit Aer con un backend falso de IBM (`qiskit_ibm_runtime.fake_provider`, ej. `FakeBrisbane` o `FakeManilaV2`).
+   - Exportar P(acierto) por k a `qiskit/fixtures/noise_profile.json`.
+   - Ajustar el `phaseNoise` (σ) del simulador JS que mejor reproduce esa curva y pasárselo a Lucas (un número).
+4. **(Opcional)** Una celda de Colab lista para la demo: pegar el código exportado y correrlo en vivo.
+5. Pasarle a Alvaro una frase honesta para el pitch: *"el desfase es un modelo de un solo parámetro, ajustado al perfil de ruido de un procesador IBM simulado"*.
+
+**Hecho cuando:** `selfTest` sigue en verde, existe `noise_profile.json` y hay un σ recomendado.
+
+### LUCAS: hacer visible el ruido y la progresión (`js/game.js`)
+1. **Tormenta:** una de las zonas de niebla pasa a ser *tormenta*, con otro color y una etiqueta. Las búsquedas dentro de ella usan `sensorFlip = config.stormSensorFlip` (0,25). Afecta a **ambos** cañones.
+2. **Ruido del circuito:** `config.phaseNoise = 0.15` provisional hasta recibir el valor de Avix. Afecta **solo** al cuántico.
+3. **Log v2:** agregar `zone`, `sensorFlip`, `phaseNoise` y `misreads` (0 si Quantum no lo devuelve) y pasar `Game.history` a `UI.showEnd`.
+4. **Pistas:** `hint(clave)` muestra `Content.hints[clave]` con el toast actual, una vez por sesión (según la tabla de arriba).
+5. **Juice:** el tanque cambia de aspecto con el cañón cuántico (halo o color) y se guarda un récord personal en `localStorage` (bots eliminados y % de acierto cuántico), con try/catch.
+6. **(Opcional)** Un bot "cuántico" que dispara al jugador escondido en la niebla con k = 2 y otro "ansioso" con k = 3. Ejemplos vivos de la comparación.
+
+**Hecho cuando:** en `test/game.html` se ve la tormenta, los fallos por ruido aparecen en el log y las pistas salen (con un `Content.hints` de prueba).
+
+### GANDY: que se lea la física (`js/ui.js`)
+1. **Leyenda** en `drawSectors` durante la búsqueda: "barra = amplitud (azul +, rosa −) · cono = probabilidad", o "verde = posible · gris = descartado" en el clásico.
+2. **Modo profundización:**
+   - un interruptor "Ver más" en `showStart` guarda `UI.deep`;
+   - con `UI.deep`, `drawSectors` muestra el valor de cada amplitud (ej. "+0,97", "−0,09") además del %;
+   - el HUD muestra la fórmula: sin²((2k+1)θ) en el cuántico y (k+1)/8 en el clásico.
+3. **Pantalla final v2:**
+   - bloque **"Ruido"**: búsquedas en tormenta y aciertos perdidos por el sensor (`misreads > 0`), separado del ruido del circuito (`phaseNoise`);
+   - **acumulado de la sesión** con `history` (varias partidas), junto a la frase "con más disparos, lo observado se acerca a la teoría";
+   - destacar **"tu mejor k cuántico"**.
+4. Probar en el celular con el QR (overlays y legibilidad).
+5. **`docs/GUIA.md`:**
+   - abrir ya el PR de `feat/ui` a `main` para que todos tengan la guía;
+   - al cierre, actualizarla con el contrato v2 (`misreads`, `zone`, `history`, `Content.hints`), la tormenta y el ruido activo, y la tabla de `Game.config` (`stormSensorFlip`, `phaseNoise` ≠ 0);
+   - revisar la frase de la §7 (ver "Observaciones" más abajo).
+
+**Hecho cuando:** `test/ui.html` muestra la leyenda, el modo profundización y la pantalla final v2 con un log falso que incluye `zone`/`misreads`.
+
+### ALVARO: contenido educativo y pitch (`js/content.js`, `pitch/`)
+1. **(20 min, prioridad 1) `content.js`:**
+   - `start` (3 líneas), las 7 `cards` (intuitivo de 2–4 líneas + profundo) y `hints` (1 línea cada una);
+   - `pickCard(log)`, en este orden de prioridad:
+     1. hubo un fallo cuántico con k=3 → `sobreRotacion`;
+     2. hubo `misreads` → `ruidoDatos`;
+     3. hubo fallo cuántico con `phaseNoise` > 0 → `ruidoCircuito`;
+     4. hubo aciertos cuánticos → `interferencia`;
+     5. solo se usó el clásico → `probClasica`;
+     6. menos de 10 disparos → `pocasPartidas`.
+2. **Revisar con el checklist de la sección 7** todos los textos que ve el jugador o el jurado: `say(...)` en `game.js`, `DEFAULT_START` en `ui.js`, los comentarios de `toQiskit` y `docs/GUIA.md` (sobre todo las §6 y §7). Los problemas se le **avisan al dueño del archivo**, no se editan.
+3. **Slides** (orden de la fase 1) + guion de la demo de 60–90 s + preguntas del jurado. Usar la frase de calibración de Avix tal cual (es un ajuste efectivo, no "ruido real de IBM").
+4. **Evidencia de aprendizaje:**
+   - formulario pre/post de 4 preguntas (sección 12);
+   - si da el tiempo, que 2–3 personas de otros equipos jueguen 2 minutos;
+   - poner el resultado en una slide, aunque sea pequeño y diciendo que es preliminar.
+
+**Hecho cuando:** `node test/check-contract.js` ya no marca `content.js` como pendiente y las slides están completas.
+
+### Observaciones para revisar (13:50)
+1. **`docs/GUIA.md` §7** dice que el clásico es "el mismo problema, no el mejor algoritmo posible". En búsqueda no estructurada, consultar sector por sector **sí es la estrategia clásica óptima** (ningún método clásico supera (k+1)/8 con k consultas). Y la ventaja cuadrática de Grover en número de consultas está demostrada para este problema idealizado (sección 3 del brief). Tal como está, la frase debilita el argumento de "comparación justa". Propuesta: *"El clásico usa la mejor estrategia clásica posible para este problema. La ventaja de Grover es real en número de consultas, pero solo en búsqueda no estructurada idealizada; con 8 sectores es un ejemplo pedagógico, no una demostración de ventaja práctica."* Que lo revise Alvaro con Gandy.
+2. **`feat/ui` está detrás de `main`** (le falta el commit de `TAREAS.md`). No es un problema: el PR solo agrega `docs/GUIA.md` y no borra nada de `TAREAS.md`, aunque el diff contra `main` lo haga parecer.
+3. Todavía nadie creó las ramas `-v2`. Si alguna tarea no va a entrar antes del freeze, recórtenla y avisen.
+
+### Cierre (14:35 → 15:00)
+1. **14:35:** freeze de código; PRs de las 4 ramas `-v2` a `main`.
+2. Lucas pone el σ de Avix en `config.phaseNoise`.
+3. Prueba de humo en Pages:
+   - `selfTest` en verde;
+   - k=2 da cerca de 95 % fuera de la tormenta y baja dentro de ella;
+   - aparecen las pistas;
+   - la pantalla final muestra tarjeta, ruido y acumulado.
+4. QR, prueba en celular y ensayo de la demo con la partida real.
+
+Si la entrega es a otra hora, mover el freeze a 25 minutos antes.
+
+---
 
 ## Objetivo del prototipo
 Un *vertical slice* jugable con:
