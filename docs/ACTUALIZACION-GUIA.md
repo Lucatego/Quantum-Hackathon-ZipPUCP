@@ -1,6 +1,6 @@
-# Actualización de la guía (revisión de las 16:30)
+# Actualización de la guía (revisión de las 16:50)
 
-`docs/GUIA.md` describe el prototipo de las 14:00: 5 bots, mapa chico, contrato v1 y una "visión" que ya está hecha. Este documento trae **el texto listo para reemplazar**, sección por sección. Todo lo que dice se comprobó contra `main` (`e73df0b`). Los valores de configuración salen de `Game.config` en ese commit.
+`docs/GUIA.md` describe el prototipo de las 14:00: 5 bots, mapa chico, contrato v1 y una "visión" que ya está hecha. Este documento trae **el texto listo para reemplazar**, sección por sección. Todo lo que dice se comprobó contra `main` (`b08e47b`, después de los cambios de Gandy de las 16:40). Los valores de configuración salen de `Game.config` en ese commit.
 
 **Regla para no volver a desfasarnos:** cada PR que cambie el comportamiento del juego actualiza en el mismo PR su parte de `GUIA.md` y la tabla de `Game.config` (§10).
 
@@ -13,28 +13,37 @@ Responsable de aplicarlo: **Gandy**, dueño de `docs/GUIA.md` y de la guía dent
 ### Aviso inicial (línea 5)
 Reemplazar el bloque `> Estado verificado…` por:
 ```md
-> Estado verificado el 2026-10-24 sobre `main` (`e73df0b`): carga `content.js`, `quantum.js`, `ui.js`, `game.js` y la portada 3D opcional (`vendor/three.min.js` + `intro3d.js`). Detalle en la sección 9.
+> Estado verificado el 2026-10-24 sobre `main` (`b08e47b`): carga `content.js`, `quantum.js`, `ui.js`, `game.js` y la portada 3D opcional (`vendor/three.min.js` + `intro3d.js`). Detalle en la sección 9.
 ```
 
 ### §4. Cómo es una partida (reemplazar entera)
+La versión de Gandy de las 16:43 tiene dos errores que este reemplazo corrige:
+- **una frase rota en el punto 1:** "…no demuestra nada). de pasarse Se navega…";
+- **dos puntos numerados "2."**.
+
+También conserva su punto nuevo "Cómo enseña el juego mientras juegas".
 ```md
 ## 4. Cómo es una partida
-1. **Pantalla de inicio:** portada 3D (o 2D si no hay WebGL), el botón **Jugar** y **Cómo jugar** (guía de 8 diapositivas, que se navega con los botones o con `←` `→` `Esc`). "Más sobre el juego" despliega el contexto y los mitos.
-2. **Arena:** un mapa de 3200×2200 con **10 bots** que deambulan, se esconden en la niebla y pelean entre sí y contra ti. El **minimapa** (abajo a la derecha) muestra la niebla, la zona, las piezas y solo los bots que estás viendo.
-3. **La niebla está viva:** son bancos de humo irregulares que **crecen por fases** (cada 25 s), los **arrastra el viento** (el indicador "Viento →" dice hacia dónde) y cada 35 s uno **se disipa** y reaparece en otro lugar, dejando expuestos a los que se escondían ahí.
-4. **La zona se cierra:** cada 30 s la zona segura se achica. **Afuera está la tormenta:** pierdes 4 de vida por segundo y **el sensor falla** (para los dos cañones).
-5. **Disparo normal** (clic izquierdo o `F`): para enemigos que ves en campo abierto. Las balas `1` dañan (12). Con una bala `0` (teclas `Z`/`X` o los pickups del piso) **te curas tú** al impactar (8). Las **zonas inestables** (≈) del piso vuelven aleatorio el efecto de las balas que las cruzan.
-6. **Radar:** si hay un enemigo **dentro de la niebla y a tu alcance** (380), el HUD muestra "¡Hay alguien! (Espacio)". Sabes *que* hay alguien, pero **no en cuál de los 8 sectores**.
-7. **Tu cañón cuántico se arma con piezas:** empiezas solo con el clásico. Por el mapa hay piezas **H** (superposición), **M** (marcador), **D** (difusor), **S** (estabilizador) y, después del minuto, a veces una **C** (calibrador). Al pasar por encima se agregan **en ese orden** a tu circuito (hasta 8). `R` suelta la última. Siempre aparecen H, M y D cerca del inicio.
-8. **Disparo de búsqueda** (`Espacio` o clic derecho):
+1. **Pantalla de inicio:** portada 3D (o 2D si no hay WebGL), los botones **Jugar**, **Ruta de aprendizaje** y **Cómo jugar**. "Cómo jugar" es una guía de 12 diapositivas: el reto, cómo se juega, la Ruta en 4 rondas, controles con teclas dibujadas, qué te avisa el juego, los dos cañones, qué tiene que ver con la computación cuántica, tu cañón como circuito interactivo, un laboratorio de k con el anillo en 3D, la trampa de pasarse con gráfico, un glosario y por qué una partida no demuestra nada. Se navega con los botones o con `←` `→` `Esc`. "Más sobre el juego" despliega el contexto y los mitos.
+2. **Cómo enseña el juego mientras juegas** (todo en `js/ui.js`):
+   - **Tarjetas a la izquierda, bajo el HUD:** definen cada término la primera vez que aparece (radar, pieza recogida, zona inestable, tormenta, tipo de bala, consulta…) y, después de cada disparo, explican qué pasó con la teoría y el recuento real. Cada definición sale una vez por sesión.
+   - **Fin de ronda** (`UI.showRoundEnd`): la idea de la ronda (`Content.cards`), las palabras nuevas y observado frente a teoría.
+   - **Glosario único:** `UI.defs` y `UI.glossary` alimentan la guía, las tarjetas y el fin de ronda. Sus textos pasan `Content.audit`.
+3. **Arena:** un mapa de 3200×2200 con **10 bots** que deambulan, se esconden en la niebla y pelean entre sí y contra ti. El **minimapa** (abajo a la derecha) muestra la niebla, la zona, las piezas y solo los bots que estás viendo.
+4. **La niebla está viva:** son bancos de humo irregulares que **crecen por fases** (cada 25 s), los **arrastra el viento** (el indicador "Viento →" dice hacia dónde) y cada 35 s uno **se disipa** y reaparece en otro lugar, dejando expuestos a los que se escondían ahí.
+5. **La zona se cierra:** cada 30 s la zona segura se achica. **Afuera está la tormenta:** pierdes 4 de vida por segundo y **el sensor falla** (para los dos cañones).
+6. **Disparo normal** (clic izquierdo o `F`): para enemigos que ves en campo abierto. Las balas `1` dañan (12). Con una bala `0` (teclas `Z`/`X` o los pickups del piso) **te curas tú** al impactar (8). Las **zonas inestables** (≈) del piso vuelven aleatorio el efecto de las balas que las cruzan.
+7. **Radar:** si hay un enemigo **dentro de la niebla y a tu alcance** (380), el HUD muestra "¡Hay alguien! (Espacio)". Sabes *que* hay alguien, pero **no en cuál de los 8 sectores**.
+8. **Tu cañón cuántico se arma con piezas:** empiezas solo con el clásico. Por el mapa hay piezas **H** (superposición), **M** (marcador), **D** (difusor), **S** (estabilizador) y, después del minuto, a veces una **C** (calibrador). Al pasar por encima se agregan **en ese orden** a tu circuito (hasta 8). `R` suelta la última. Siempre aparecen H, M y D cerca del inicio.
+9. **Disparo de búsqueda** (`Espacio` o clic derecho):
    - **Clásico:** k consultas, que eliges con `Q`/`E` (0 a 3).
    - **Cuántico:** k es la **cantidad de marcadores (M)** de tu circuito; Q/E no lo cambian.
    - Cada consulta o marcador cuesta **20 de energía** (máximo 100, se regenera 9 por segundo).
    - El juego entra en **cámara lenta ~1 s** y muestra las 8 barras. El disparo sale hacia un sector **muestreado** según esas barras: si coincide con el del enemigo, aciertas (60 de daño).
-9. **Fin:** ganas si eres el último en pie y pierdes si te eliminan. Aparece la **pantalla final** (sección 5).
+10. **Fin:** ganas si eres el último en pie y pierdes si te eliminan. Aparece la **pantalla final** (sección 5).
 
 **Otros modos:**
-- **Ruta de aprendizaje** (`?ruta` o `?ruta=N`): 4 rondas cortas de un concepto cada una (Niebla → Amplitudes → Sobre-rotación → Ruido), en el mapa chico. El progreso se guarda.
+- **Ruta de aprendizaje** (botón en el inicio, o `?ruta` / `?ruta=N`): 4 rondas cortas de un concepto cada una (Niebla → Amplitudes → Sobre-rotación → Ruido), en el mapa chico. El progreso se guarda.
 - **Demo** (`?demo`): el mapa chico de siempre, k libre y sin piezas, para la presentación (ver `docs/DEMO.md`).
 ```
 
@@ -93,8 +102,10 @@ Quantum.CALIBRATED_PHASE_NOISE                              // 0,46
 // ---- UI (Gandy) ----
 UI.drawHUD(ctx, state)   UI.drawSectors(ctx, x, y, result, cannon)
 UI.showStart(onPlay)     UI.showEnd(log, onReplay, history)   UI.showGuide(onClose)
+UI.showRoundEnd(info, onNext)        // info = { round, total, titulo, card, passed, log }
+UI.defs  UI.glossary  UI.teachEvents  // glosario y tarjetas que enseñan mientras se juega
 // opcionales (si faltan, Game dibuja un respaldo):
-UI.drawCircuit(ctx, state)   UI.drawCalibration(ctx, { phi, curve })   UI.showRoundEnd(info, onNext)
+UI.drawCircuit(ctx, state)   UI.drawCalibration(ctx, { phi, curve })
 
 // ---- Game (Lucas) ----
 Game.start()   Game.startRoute(n)   Game.config   Game.state
@@ -111,11 +122,11 @@ Content.start  Content.cards  Content.hints  Content.pickCard(log)  Content.myth
 ### §9. Estado de la integración (reemplazar entera)
 ```md
 ## 9. Estado de la integración (verificado)
-Sobre `main` (`e73df0b`):
+Sobre `main` (`b08e47b`):
 - `Quantum.selfTest()`: todo en verde, incluida la comparación con los fixtures de Qiskit (41 casos, error ~1e-15).
 - `node test/check-contract.js`: OK. `node test/check-content.js`: OK.
-- `node test/run-ui-tests.js`: 55 de 55 con `jsdom` (incluye la portada 3D).
-- Prueba de punta a punta con los 4 módulos y la portada (sin WebGL cae al 2D): inicio → partida en modo circuito → pantalla final con Qiskit → `Game.startRoute(2)`, sin errores.
+- `node test/run-ui-tests.js`: 92 de 92 con `jsdom` (incluye la portada 3D y las tarjetas).
+- Prueba de punta a punta con los 4 módulos y la portada (sin WebGL cae al 2D): inicio → botón **Ruta de aprendizaje** → ronda 1 y 2 superadas con su pantalla de fin de ronda → battle royale con tarjetas educativas → pantalla final, sin errores.
 - **No verificado:** rendimiento en celular real (ver la sección "Rendimiento" de `docs/ACTUALIZACION-GUIA.md`).
 ```
 
@@ -151,7 +162,7 @@ Ejemplo: `Game.config.stormSensorFlip = 0.5` y busca dentro de la tormenta: los 
 | `[H][M]` no mejora nada | Correcto: el marcador solo cambia un signo. Falta el difusor (D) |
 | El cuántico "falla más" con 3 pares | Es la sobre-rotación. Suelta un par con `R`, o consigue el calibrador (C) |
 | Pierdo vida sin que nadie me dispare | Estás fuera de la zona: aviso "FUERA DE LA ZONA" arriba |
-| No encuentro la Ruta de aprendizaje | `?ruta` en la URL (o `Game.startRoute(1)` en la consola) |
+| Quiero repetir una ronda de la Ruta | `?ruta=N` en la URL (o `Game.startRoute(N)` en la consola) |
 | Nada se ve en el celular | Abre por HTTP (GitHub Pages) y recarga |
 
 ### §12. Fuera del prototipo / visión (reemplazar entera)
@@ -166,9 +177,9 @@ Ejemplo: `Game.config.stormSensorFlip = 0.5` y busca dentro de la tormenta: los 
 
 ## 2. Guía "Cómo jugar" dentro del juego (`js/ui.js`, `DEFAULT_GUIDE`)
 
-Ya está al día con los controles, las piezas H, M y D, la tecla `R` y la frase de la ventaja. Faltan dos cosas:
+Tiene 12 diapositivas y ya está al día con los controles, las piezas H, M y D, la tecla `R`, la Ruta, los avisos, el glosario y la frase de la ventaja. Faltan dos cosas:
 
-1. **Nueva diapositiva "El mapa"**, después de "Cómo se juega". Es información para jugar, no un concepto, así que no rompe el pilar de "explicar después":
+1. **Nueva diapositiva "El mapa"**, después de "Controles". Es información para jugar, no un concepto, así que no rompe el pilar de "explicar después":
    ```js
    { titulo: 'El mapa', texto:
      'La niebla crece, la mueve el viento y a veces se disipa: los escondites cambian.\n' +
@@ -189,9 +200,21 @@ Ya está al día con los controles, las piezas H, M y D, la tecla `R` y la frase
 Metas: **60 fps en laptop** y **≥ 30 fps en celular**, con un tiempo de cuadro de ~16 ms.
 
 1. **Medir primero:** un contador de FPS opcional (`?fps`) en una esquina. Anotar los fps de `main` hoy en una laptop y en un celular: esa es la línea base.
-2. **Niebla:** hoy se crean ~40 degradados radiales por cuadro (uno por círculo visible). **Pre-dibujar cada banco** una vez en un canvas aparte y después solo copiarlo con `drawImage` (moverlo o escalarlo es barato). Es el ahorro más grande y es requisito antes de llegar a ~70 círculos.
+2. **Niebla:** hoy se crea un degradado radial por cada círculo visible en cada cuadro. **Medido en `main`: 6–9 por cuadro** en una pantalla de laptop al empezar, y suben a medida que la niebla crece y con la arena XL. **Pre-dibujar cada banco** una vez en un canvas aparte y después solo copiarlo con `drawImage` (moverlo o escalarlo es barato). Es el ahorro más grande y es requisito antes de llegar a ~70 círculos.
 3. **Minimapa:** redibuja todos los círculos de niebla en cada cuadro. Dibujar el fondo (niebla y zona) en una capa y refrescarla cada ~0,5 s; encima, solo los puntos que se mueven.
 4. **`devicePixelRatio`:** limitarlo a 2 en `resize()` (`Math.min(2, window.devicePixelRatio || 1)`). En celulares con 3×, el canvas tiene 9 veces más píxeles.
 5. **"¿Está en la niebla?":** se calcula muchas veces por cuadro para cada tanque. Calcularlo una vez por tanque por cuadro y guardarlo.
 6. **Calibrador con ruido:** `Quantum.gradient` con `phaseNoise` tarda ~13 ms por llamada (40 simulaciones por sector). Para el jugador está bien (una vez por disparo). Si un bot lo usa, que entrene **sin ruido** o con menos simulaciones.
 7. **Portada 3D:** ya se detiene al cerrar el inicio (verificado). Three.js son 600 KB, que GitHub Pages sirve comprimidos a ~155 KB.
+
+---
+
+## 4. Si se mergea `feat/cambios-arena-guia-v2x`
+
+Esa rama, de prueba, cambia valores que aparecen en la guía. Si entra a `main`, actualizar en el mismo PR:
+- **§4 "Arena":** 4800×3200 con **14 bots**; cámara alejada (0,85); la niebla se genera con una semilla (`?semilla=N`, `?dia` para el desafío del día), con corredores, y cubre ~35 % del mapa al empezar y ~55 % al final.
+- **§10 tabla:**
+  - cambian `world` 4800×3200, `bots` 14, `lootInitial` 18, `lootEvery` 6 s, `lootMax` 28, `fogPhaseStep` 0,1 y `fogMaxScale` 1,35;
+  - son nuevos `cameraZoom` 0,85, `fogCoverage` 0,35, `fogMaxBanks` 24 y `fogCorridors` 3.
+- **§11:** agregar "¿Cómo veo los fps? `?fps` en la URL".
+- **Rendimiento (§3 de este documento):** los puntos 2 a 5 ya están hechos en esa rama. Medido: 0 degradados por cuadro (antes 6–9), ~25 `arc` (antes ~70) y 2,2× menos píxeles en pantallas 3×.
