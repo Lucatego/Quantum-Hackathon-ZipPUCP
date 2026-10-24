@@ -110,6 +110,18 @@
     return { r: r0 + (DIVE_R - r0) * e, h: h0 + (DIVE_H - h0) * e, look: 0.4 + (DIVE_LOOK - 0.4) * e };
   }
 
+  // Laboratorio de k (guía): un estado fijo por k, sin línea de tiempo. Puro para probarlo sin GPU.
+  function labState(k, target) {
+    k = Math.max(0, Math.min(3, Math.round(typeof k === 'number' && isFinite(k) ? k : 0)));
+    target = target === undefined ? 3 : target;
+    var lay = layout(getResult(k, target));
+    var probs = lay.map(function (s) { return s.prob; });
+    return {
+      k: k, target: target, amps: lay.map(function (s) { return s.amp; }), probs: probs,
+      caption: 'k = ' + k + ': el sector buscado tiene ' + pct(probs[target]) + '; cada uno de los otros, ' + pct(probs[(target + 1) % 8]) + '.'
+    };
+  }
+
   function camDistance(aspect) { return aspect < 1.3 ? Math.min(11, 6.2 * 1.3 / aspect) : 6.2; }
 
   // ---- Escena ----
@@ -190,7 +202,7 @@
     return { root: c, text: t };
   }
 
-  function buildScene(T, container) {
+  function buildScene(T, container, lab) {
     var w = Math.max(1, container.clientWidth || window.innerWidth), h = Math.max(1, container.clientHeight || window.innerHeight);
     var small = window.innerWidth < 600;
     var renderer = new T.WebGLRenderer({ antialias: !small, alpha: true });
@@ -211,6 +223,11 @@
     var tank = buildTank(T);
     scene.add(tank.group);
 
+    if (lab) {            // placa blanca bajo el sector buscado
+      var m = new T.Mesh(wedgeGeometry(R0 - 0.15, R1 + 0.15, lab.target * Math.PI / 4, (lab.target + 1) * Math.PI / 4),
+        new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false }));
+      m.scale.y = 0.015; m.position.y = -0.02; scene.add(m);
+    }
     var sectors = [];
     for (var i = 0; i < 8; i++) {
       var a0 = i * Math.PI / 4 + GAP, a1 = (i + 1) * Math.PI / 4 - GAP;
@@ -279,8 +296,14 @@
       }
     }
     live.last = t;
-    applyState(live, stateAt(live.seq, ms));
-    driftFog(live.fog, ms / 1000);
+    if (live.lab) {
+      var c = live.lab.cur, g = live.lab.goal;
+      for (var j = 0; j < 8; j++) { c.amps[j] += (g.amps[j] - c.amps[j]) * 0.18; c.probs[j] += (g.probs[j] - c.probs[j]) * 0.18; }
+      applyState(live, { amps: c.amps, probs: c.probs, caption: g.caption });
+    } else {
+      applyState(live, stateAt(live.seq, ms));
+      driftFog(live.fog, ms / 1000);
+    }
     live.px += (live.tx - live.px) * 0.08; live.py += (live.ty - live.py) * 0.08;   // suavizado
     var par = parallaxOffset(live.px, live.py);
     var ang = ms * 0.00012 + par.dAngle;
@@ -294,15 +317,18 @@
     live.raf = requestAnimationFrame(frame);
   }
 
-  function start(container) {
+  function start(container, opts) {
     stop();
     var T = window.THREE;
     if (!T || !container || !hasWebGL()) return false;
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
-      var s = buildScene(T, container);
+      var labGoal = opts && opts.lab ? labState(opts.k, 3) : null;
+      var s = buildScene(T, container, labGoal);
       live = { renderer: s.renderer, scene: s.scene, camera: s.camera, canvas: s.canvas, sectors: s.sectors, tank: s.tank, fog: s.fog, caption: s.caption, reduce: reduce, dive: null,
-        container: container, px: 0, py: 0, tx: 0, ty: 0, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: sequence(3) };
+        container: container, px: 0, py: 0, tx: 0, ty: 0, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: labGoal ? null : sequence(3),
+        lab: labGoal ? { goal: labGoal, cur: { amps: labGoal.amps.slice(), probs: labGoal.probs.slice() } } : null };
+      if (labGoal) { s.fog.pts.visible = false; s.caption.root.style.display = 'none'; }   // el texto de la guía ya da las cifras
       live.onResize = function () {
         var w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
         live.renderer.setSize(w, h, false); live.camera.aspect = w / h; live.camera.updateProjectionMatrix();
@@ -321,14 +347,28 @@
         else if (live && !live.raf && !reduce) live.raf = requestAnimationFrame(frame);
       };
       document.addEventListener('visibilitychange', live.onVisibility);
-      if (reduce) {            // sin movimiento: se muestra solo el estado k = 2
-        applyState(live, stateAt(live.seq, 3 * (HOLD + MOVE)));
+      if (reduce) {            // sin movimiento: se muestra solo el estado k = 2 (o el k elegido en el laboratorio)
+        applyState(live, live.lab ? live.lab.goal : stateAt(live.seq, 3 * (HOLD + MOVE)));
         driftFog(live.fog, 0);
         placeCamera(live, 0.8);
         live.renderer.render(live.scene, live.camera);
       } else live.raf = requestAnimationFrame(frame);
       return true;
     } catch (e) { stop(); return false; }
+  }
+
+  function startLab(container, k) { return start(container, { lab: true, k: k }); }
+
+  // setLab(k): cambia el k del laboratorio; true si hay un laboratorio en marcha.
+  function setLab(k) {
+    if (!live || !live.lab) return false;
+    live.lab.goal = labState(k, live.lab.goal.target);
+    if (live.reduce) {                       // sin animación: salta directo y vuelve a dibujar
+      live.lab.cur = { amps: live.lab.goal.amps.slice(), probs: live.lab.goal.probs.slice() };
+      applyState(live, live.lab.goal);
+      live.renderer.render(live.scene, live.camera);
+    }
+    return true;
   }
 
   function stop() {
@@ -349,6 +389,6 @@
 
   window.Intro3D = {
     start: start, stop: stop, layout: layout, polar: polar, defaultResult: defaultResult, getResult: getResult,
-    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, parallaxOffset: parallaxOffset, diveCamera: diveCamera, dive: dive, timing: { HOLD: HOLD, MOVE: MOVE }
+    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, parallaxOffset: parallaxOffset, diveCamera: diveCamera, dive: dive, labState: labState, startLab: startLab, setLab: setLab, timing: { HOLD: HOLD, MOVE: MOVE }
   };
 })();

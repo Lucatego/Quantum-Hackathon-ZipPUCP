@@ -66,6 +66,7 @@
       ctx.fillStyle = COLOR.text;
       ctx.fillText('Buscando…', x, by + (extra.length ? 58 : 30));
     }
+    teachHUD(ctx, state);
     ctx.restore();
   }
   // ---- Sectores (fase 1) ----
@@ -150,6 +151,193 @@
     ctx.stroke();
     ctx.restore();
   }
+  // ---- Definiciones: el juego enseña mientras se juega ----
+  // Una sola fuente para el glosario de la guía, las tarjetas que salen en pantalla y el fin de ronda.
+  var DEFS = {
+    sector: { t: 'Sector', d: 'Cada una de las 8 porciones de 45° alrededor de tu tanque. El enemigo escondido está en una; el reto es averiguar en cuál.' },
+    niebla: { t: 'Niebla', d: 'Zona donde no ves a los enemigos. Ahí hay que buscarlos: el radar avisa de que hay alguien y tú decides cómo buscar.' },
+    radar: { t: 'Radar', d: 'Te avisa de que hay alguien escondido en la niebla, pero no en cuál de los 8 sectores. Con Espacio lanzas una búsqueda.' },
+    tormenta: { t: 'Tormenta', d: 'Niebla de tormenta o zona fuera del círculo seguro: el sensor se equivoca a veces. Es ruido en los datos y afecta por igual a los dos cañones.' },
+    zona: { t: 'Zona segura', d: 'Círculo que se cierra por fases. Fuera de él hay tormenta: pierdes vida y el sensor falla.' },
+    inestable: { t: 'Zona inestable (≈)', d: 'Charco marcado con ≈ en el piso. Una bala que lo cruza queda en superposición: al impactar se decide al azar si cura o daña. Esas probabilidades están escritas en el juego, no las calcula el simulador.' },
+    balas: { t: 'Balas 0 y 1', d: 'Bala 0: al impactar te cura (+8 de vida) y no daña a nadie. Bala 1: daña al impactado (−12). Z y X cambian de tipo.' },
+    energia: { t: 'Energía', d: 'Combustible de tus búsquedas. Se regenera con el tiempo; cada consulta o iteración cuesta 20.' },
+    consulta: { t: 'Consulta', d: 'Cada vez que el sensor responde «¿hay alguien en este sector?». Cuesta lo mismo en el clásico que en el cuántico: 20 de energía.' },
+    k: { t: 'k', d: 'Cuántas consultas hace el cañón clásico o cuántas iteraciones hace el cuántico. Con k = 0 no se consulta el sensor y se dispara a ciegas (1 de 8).' },
+    clasico: { t: 'Cañón clásico', d: 'Revisa un sector por consulta y lo descarta si el enemigo no está. Con k consultas acierta (k + 1)/8: 25 %, 37,5 % y 50 % para k = 1, 2 y 3.' },
+    cuantico: { t: 'Cañón cuántico', d: 'Simula un circuito de 3 qubits (8 estados, uno por sector). Sin ruido, con k = 0, 1, 2 y 3 iteraciones acierta 12,5 %, 78,1 %, 94,5 % y 33,0 %.' },
+    qubit: { t: 'Qubit', d: 'Unidad básica de un computador cuántico. Con 3 qubits hay 2³ = 8 estados posibles: uno por cada sector.' },
+    superposicion: { t: 'Superposición (H)', d: 'Pieza H. Deja los 8 sectores con la misma amplitud (1/√8). Sigue siendo un solo estado: no se está probando cada sector por separado.' },
+    amplitud: { t: 'Amplitud', d: 'Número (puede ser negativo) asociado a cada sector. Cian = positiva, rosa = negativa. La probabilidad es su cuadrado: +0,35 y −0,35 dan el mismo 12,5 %.' },
+    probabilidad: { t: 'Probabilidad', d: 'Qué tan probable es que el disparo caiga en un sector: la amplitud al cuadrado. Es el cono amarillo.' },
+    oraculo: { t: 'Oráculo (sensor)', d: 'El sensor visto como la pregunta «¿es este sector?». En el juego es una abstracción: construir uno real a partir de un sensor físico no es fácil.' },
+    marcador: { t: 'Marcador (M)', d: 'Pieza M. Invierte el signo de la amplitud del sector que señala el sensor. Por sí sola no cambia ninguna probabilidad.' },
+    difusor: { t: 'Difusor (D)', d: 'Pieza D. Hace interferir las amplitudes: la del sector marcado crece y las demás bajan en parte. Sin un marcador antes, no tiene a quién ayudar.' },
+    iteracion: { t: 'Iteración', d: 'Un par marcador + difusor (M + D). Cada iteración cuesta una consulta y suma 1 a k.' },
+    interferencia: { t: 'Interferencia', d: 'Las amplitudes se suman o se cancelan según su signo. Puede ayudar o perjudicar, según cuántas iteraciones hagas.' },
+    medicion: { t: 'Medición (colapso)', d: 'Al disparar se mide: el estado queda en un solo sector, elegido al azar según las probabilidades. Medir no te enseña las amplitudes, solo dónde cayó.' },
+    sobrerotacion: { t: 'Sobre-rotación', d: 'Pasarte de iteraciones. Con k = 3 la amplitud del sector marcado da la vuelta y el acierto baja de ~95 % a ~33 %.' },
+    estabilizador: { t: 'Estabilizador (S)', d: 'Pieza S. No cambia el estado; reduce a la mitad el ruido del circuito.' },
+    calibrador: { t: 'Calibrador (C)', d: 'Pieza C. Ajusta la fase de marcadores y difusores con descenso de gradiente, un paso por disparo: es entrenar un circuito, como en aprendizaje automático cuántico.' },
+    decoherencia: { t: 'Decoherencia', d: 'Ruido del circuito: cada pieza agrega un pequeño desfase al azar y la interferencia funciona peor. Solo afecta al cuántico; no es lo mismo que el sensor fallando en la tormenta.' },
+    grover: { t: 'Algoritmo de Grover', d: 'Búsqueda que repite marcador + difusor. Su ventaja es en número de consultas, para búsqueda no estructurada idealizada; aquí es una simulación didáctica de 8 sectores, no una prueba de ventaja práctica.' }
+  };
+
+  var GLOSSARY = [
+    { g: 'En el mapa', ids: ['sector', 'niebla', 'radar', 'tormenta', 'zona', 'inestable', 'balas'] },
+    { g: 'Energía y cañones', ids: ['energia', 'consulta', 'k', 'clasico', 'cuantico'] },
+    { g: 'La física del cañón cuántico', ids: ['qubit', 'superposicion', 'amplitud', 'probabilidad', 'oraculo', 'marcador', 'difusor', 'iteracion', 'interferencia', 'medicion', 'sobrerotacion'] },
+    { g: 'Piezas extra y ruido', ids: ['estabilizador', 'calibrador', 'decoherencia', 'grover'] }
+  ];
+
+  var PIECE_DEF = { H: 'superposicion', M: 'marcador', D: 'difusor', S: 'estabilizador', C: 'calibrador' };
+  var PIECE_SHORT = {
+    H: 'H, superposición: reparte la amplitud entre los 8 sectores.',
+    M: 'M, marcador: invierte el signo del sector buscado.',
+    D: 'D, difusor: hace crecer la amplitud del sector marcado.',
+    S: 'S, estabilizador: reduce a la mitad el ruido.',
+    C: 'C, calibrador: ajusta la fase, un paso por disparo.'
+  };
+
+  // Mensajes que salen en pantalla y qué significan (la guía los explica).
+  var EVENTS = [
+    ['Recogiste … · circuito: H M D', 'La pieza se añadió al final de tu circuito cuántico. El orden importa.'],
+    ['¡Acierto! Sector n', 'La medición cayó en el sector donde estaba el enemigo.'],
+    ['Fallo: disparaste al sector a, estaba en el b', 'La medición cayó en otro sector. Aun con 94,5 % de acierto teórico se falla de vez en cuando.'],
+    ['Energía insuficiente para k = n', 'Cada consulta o iteración cuesta 20. Espera a que la energía se regenere o baja k.'],
+    ['Tu cañón cuántico está vacío', 'En el cuántico, k sale de tu circuito: recoge piezas H, M y D.'],
+    ['El radar no detecta a nadie', 'No hay nadie en la niebla a tu alcance: no hay nada que buscar.'],
+    ['+N de vida (bala 0)', 'Una bala 0 impactó y te curó. Si pasó por una zona inestable, el resultado se decidió al azar.'],
+    ['Un bot … te encontró en la niebla (k = n)', 'Los bots también buscan: el clásico revisa sectores, el cuántico itera y el ansioso se pasa de iteraciones (k = 3).'],
+    ['¡La niebla se expande!', 'Hay más escondites, así que habrá que buscar más.'],
+    ['¡Un banco de niebla se disipa!', 'Un banco de niebla desaparece y otro se forma en otro sitio.'],
+    ['¡La zona se cierra!', 'La zona segura se encoge. Afuera hay tormenta: pierdes vida y el sensor falla.']
+  ];
+
+  var ROUTE_INFO = [
+    { t: 'Niebla', goal: 'Acierta 5 búsquedas con el cañón clásico.', learn: 'Descartar reparte la probabilidad: con k consultas aciertas (k + 1)/8.', card: 'probClasica', terms: ['consulta', 'clasico'] },
+    { t: 'Amplitudes', goal: 'Arma el cañón cuántico con las piezas del piso y acierta 3 veces.', learn: 'Amplitud no es probabilidad, y el difusor hace interferir las amplitudes.', card: 'interferencia', terms: ['amplitud', 'marcador', 'difusor', 'interferencia'] },
+    { t: 'Sobre-rotación', goal: 'Acierta 5 veces con el cuántico.', learn: 'Más iteraciones no siempre es mejor: con k = 3 el acierto baja.', card: 'sobreRotacion', terms: ['iteracion', 'sobrerotacion'] },
+    { t: 'Ruido', goal: 'Acierta 3 veces a enemigos escondidos en la tormenta.', learn: 'Si los datos son malos, ningún método los salva; el ruido del circuito es otra cosa.', card: 'ruidoDatos', terms: ['tormenta', 'decoherencia'] }
+  ];
+
+  // Detecta qué hay que enseñar a partir del cambio de estado. Pura: se prueba sin canvas.
+  // prev: instantánea anterior (o null en el primer cuadro de la partida); entries: disparos nuevos del log.
+  function teachEvents(prev, state, entries, log, seen) {
+    var out = [];
+    function def(id) {
+      if (seen[id] || !DEFS[id]) return;
+      seen[id] = true;
+      out.push({ key: id, title: DEFS[id].t, text: DEFS[id].d, kind: 'def' });
+    }
+    if (prev && state) {
+      var pc = prev.circuit || [], c = state.circuit || [];
+      if (c.length > pc.length && PIECE_DEF[c[c.length - 1]]) def(PIECE_DEF[c[c.length - 1]]);
+      if (typeof state.activeBulletType === 'number' && state.activeBulletType !== prev.activeBulletType) def('balas');
+      if (state.cannon !== prev.cannon) {
+        if (state.cannon === 'quantum') {
+          var lines = [], shown = {};
+          c.forEach(function (p) { if (PIECE_SHORT[p] && !shown[p]) { shown[p] = true; lines.push(PIECE_SHORT[p]); } });
+          if (lines.length && !seen.circuito) {
+            seen.circuito = true;
+            Object.keys(shown).forEach(function (p) { seen[PIECE_DEF[p]] = true; });
+            out.push({ key: 'circuito', title: 'Tu cañón cuántico es un circuito', text: lines.join(' '), kind: 'def' });
+          }
+          def('cuantico');
+        } else def('clasico');
+      } else if (state.cannon === 'classic' && state.k !== prev.k) def('k');
+      if (state.radar && !prev.radar) def('radar');
+      if (state.searching && !prev.searching) def('consulta');
+      if (state.inHazardH && !prev.inHazardH) def('inestable');
+      if (state.radarZone === 'tormenta' && prev.radarZone !== 'tormenta') def('tormenta');
+    }
+    if (entries && entries.length) {
+      var e = entries[entries.length - 1];
+      if (e && e.cannon === 'quantum') def('medicion');
+      out.push(resultCard(e, log || []));
+    }
+    return out;
+  }
+
+  // Qué pasó en este disparo, con los números reales (observado frente a teoría).
+  function resultCard(e, log) {
+    var quantum = e.cannon === 'quantum', k = Math.round(num(e.k));
+    var same = log.filter(function (c) { return c && c.cannon === e.cannon && Math.round(num(c.k)) === k; });
+    var hits = same.filter(function (c) { return c.hit; }).length;
+    var parts = [];
+    if (quantum) parts.push(e.hit ? 'La medición cayó en el sector buscado.' : 'La medición cayó en otro sector: medir da un solo sector, al azar según las probabilidades.');
+    else parts.push(e.hit ? 'Entre los sectores que quedaban, el disparo fue al correcto.' : 'Disparaste a uno de los sectores que quedaban y no era el correcto.');
+    parts.push('Teoría con k = ' + k + ': ' + pct(clamp01(e.theory)) + '. Llevas ' + hits + '/' + same.length + ' con este cañón y este k.');
+    if (quantum && !e.hit && k === 3) parts.push('Con k = 3 te pasaste de iteraciones: aquí el acierto baja.');
+    if (num(e.misreads) > 0) parts.push('El sensor se equivocó ' + num(e.misreads) + (num(e.misreads) === 1 ? ' vez' : ' veces') + ' (ruido de los datos): afecta a los dos cañones.');
+    else if (quantum && !e.hit && k > 0 && k < 3 && num(e.phaseNoise) > 0) parts.push('Parte de los fallos viene del ruido del circuito, que solo afecta al cuántico.');
+    return { key: 'res', title: e.hit ? 'Qué pasó: acierto' : 'Qué pasó: fallo', text: parts.join(' '), kind: 'result' };
+  }
+
+  var TEACH = { seen: {}, prev: null, logRef: null, logLen: 0, queue: [], cur: null };
+
+  // Avanza la cola de tarjetas con el estado del HUD; devuelve la tarjeta visible (o null).
+  function teachTick(state, now) {
+    var T = TEACH, G = typeof window !== 'undefined' ? window.Game : null;
+    if (!G || !Array.isArray(G.log)) return null;   // solo se enseña dentro de una partida (Game.log existe)
+    var log = G.log;
+    if (log !== T.logRef) { T.logRef = log; T.logLen = log.length; T.prev = null; T.queue = []; T.cur = null; }   // partida nueva
+    var entries = log.slice(T.logLen);
+    T.logLen = log.length;
+    var cards = teachEvents(T.prev, state, entries, log, T.seen);
+    T.prev = {
+      circuit: Array.isArray(state.circuit) ? state.circuit.slice() : [], activeBulletType: state.activeBulletType, cannon: state.cannon,
+      k: state.k, radar: !!state.radar, searching: !!state.searching, inHazardH: !!state.inHazardH, radarZone: state.radarZone
+    };
+    cards.forEach(function (c) { T.queue.push(c); });
+    while (T.queue.length > 3) T.queue.shift();
+    if (T.cur && now - T.cur.t0 > T.cur.dur) T.cur = null;
+    if (!T.cur && T.queue.length) {
+      var c = T.queue.shift();
+      c.t0 = now; c.dur = Math.max(5000, Math.min(11000, 1800 + c.text.length * 45));
+      T.cur = c;
+    }
+    return T.cur;
+  }
+
+  function wrapCanvas(ctx, text, maxW) {
+    var words = String(text).split(' '), lines = [], line = '';
+    var width = typeof ctx.measureText === 'function' ? function (s) { return ctx.measureText(s).width; } : function (s) { return s.length * 7; };
+    words.forEach(function (w) {
+      var test = line ? line + ' ' + w : w;
+      if (width(test) > maxW && line) { lines.push(line); line = w; } else line = test;
+    });
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // Tarjeta a la izquierda, bajo el HUD: no pisa la ruta, las pistas ni el minimapa.
+  function drawTeach(ctx, card, now) {
+    var vw = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 800;
+    var x = 12, y = vw < 760 ? 180 : 150, w = Math.min(330, vw - 24), lh = 17;
+    ctx.save();
+    ctx.font = '13px system-ui, sans-serif';
+    var lines = wrapCanvas(ctx, card.text, w - 26), h = 40 + lines.length * lh;
+    var age = now - card.t0, left = card.dur - age;
+    ctx.globalAlpha = Math.max(0, Math.min(1, Math.min(age / 250, left / 400)));
+    ctx.fillStyle = 'rgba(14,18,32,0.92)'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = card.kind === 'result' ? COLOR.pos : COLOR.prob; ctx.fillRect(x, y, 4, h);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillText(card.title, x + 14, y + 22);
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.fillStyle = COLOR.text;
+    lines.forEach(function (l, i) { ctx.fillText(l, x + 14, y + 42 + i * lh); });
+    ctx.restore();
+  }
+
+  function teachHUD(ctx, state) {
+    try {
+      var now = Date.now(), card = teachTick(state, now);
+      if (card) drawTeach(ctx, card, now);
+    } catch (e) { /* las tarjetas nunca deben romper el HUD */ }
+  }
+
   // ---- Overlays (fase 3) ----
   var OVERLAY_ID = 'ui-overlay';
   var DEFAULT_START = [
@@ -184,6 +372,7 @@
       '#' + OVERLAY_ID + ' .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}' +
       '#' + OVERLAY_ID + ' .actions button{margin:0}' +
       '#' + OVERLAY_ID + ' button.play{flex:1 1 220px;min-height:56px;font-size:20px;letter-spacing:.04em;box-shadow:0 0 24px rgba(76,201,240,.35)}' +
+      '#' + OVERLAY_ID + ' .first{margin:0;font-size:14px;opacity:.8}' +
       '#' + OVERLAY_ID + ' .chips{display:flex;flex-wrap:wrap;gap:8px}' +
       '#' + OVERLAY_ID + ' .chip{font-size:14px;padding:3px 10px;border:1px solid ' + COLOR.guide + ';border-radius:999px;opacity:.9}' +
       '#' + OVERLAY_ID + ' details.more{margin-top:4px}' +
@@ -227,6 +416,14 @@
       '#' + OVERLAY_ID + ' .ksel{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}' +
       '#' + OVERLAY_ID + ' .ksel button{margin:0}' +
       '#' + OVERLAY_ID + ' .wires{background:#080b16;border-radius:10px;padding:8px;overflow-x:auto}' +
+      '#' + OVERLAY_ID + ' .labstage{position:relative;height:260px;margin:8px 0;border-radius:12px;background:rgba(255,255,255,.04);overflow:hidden;display:flex;align-items:center;justify-content:center}' +
+      '#' + OVERLAY_ID + ' .labstage.flat{height:auto;padding:6px 0}' +
+      '#' + OVERLAY_ID + ' .ksel button[aria-pressed="true"]{outline:2px solid ' + COLOR.prob + '}' +
+      '#' + OVERLAY_ID + ' .terms{display:grid;gap:8px;margin:8px 0}' +
+      '#' + OVERLAY_ID + ' .term{padding:8px 12px;border-left:3px solid ' + COLOR.prob + ';background:rgba(232,236,244,.05);border-radius:6px;font-size:14px}' +
+      '#' + OVERLAY_ID + ' .term b{color:' + COLOR.prob + '}' +
+      '#' + OVERLAY_ID + ' .glossary details{margin:6px 0}' +
+      '#' + OVERLAY_ID + ' .learn{color:' + COLOR.live + ';font-size:14px;margin-top:2px}' +
       '#' + OVERLAY_ID + ' .readout{color:' + COLOR.prob + ';font-weight:600}' +
       '#' + OVERLAY_ID + ' .chart{display:flex;gap:6px;align-items:flex-end;justify-content:center;margin:14px 0 4px}' +
       '#' + OVERLAY_ID + ' .cbars{display:flex;gap:4px;align-items:flex-end}' +
@@ -325,26 +522,38 @@
     var actions = el('div', undefined, 'actions');
     var play = el('button', 'Jugar', 'play'), started = false;
     play.type = 'button';
-    play.addEventListener('click', function () {
+    // Con la escena 3D activa, primero la inmersión; luego se cierra el inicio y corre start().
+    function launch(btn, start) {
       if (started) return;
       started = true;
       var called = false;
-      function go() { if (called) return; called = true; o.close(); if (typeof onPlay === 'function') onPlay(); }
+      function go() { if (called) return; called = true; o.close(); if (typeof start === 'function') start(); }
       var I = window.Intro3D, diving = false;
       if (intro && I && typeof I.dive === 'function') {
         o.root.classList.add('leaving');
-        play.disabled = true;
+        play.disabled = true; btn.disabled = true;
         try { diving = I.dive(go); } catch (e) { diving = false; }
       }
       if (diving) setTimeout(go, 1600);   // por si la pestaña está oculta y la animación no avanza
       else go();
-    });
+    }
+    play.addEventListener('click', function () { launch(play, onPlay); });
     actions.appendChild(play);
+    var G = window.Game;
+    if (G && typeof G.startRoute === 'function') {
+      var total = Math.round(num(G.ROUTE_LENGTH)) || ROUTE_INFO.length, done = Math.max(0, Math.min(total, Math.round(num(G.routeProgress))));
+      var nextRound = done >= total ? 1 : done + 1;
+      var route = el('button', done > 0 && done < total ? 'Ruta · ronda ' + nextRound + ' de ' + total : 'Ruta de aprendizaje', 'alt');
+      route.type = 'button';
+      route.addEventListener('click', function () { launch(route, function () { G.startRoute(nextRound); }); });
+      actions.appendChild(route);
+    }
     var how = el('button', 'Cómo jugar', 'alt');
     how.type = 'button';
     how.addEventListener('click', function () { showGuide(function () { showStart(onPlay); }); });
     actions.appendChild(how);
     hero.appendChild(actions);
+    if (G && typeof G.startRoute === 'function') hero.appendChild(el('p', '¿Primera vez? La Ruta de aprendizaje enseña una idea por ronda.', 'first'));
     var chips = el('div', undefined, 'chips');
     ['8 sectores', 'Mismo sensor', 'Misma energía'].forEach(function (c) { chips.appendChild(el('span', c, 'chip')); });
     hero.appendChild(chips);
@@ -371,7 +580,12 @@
       'Disparar a ciegas acierta 1 de cada 8 veces (12,5 %).' },
     { titulo: 'Cómo se juega', visual: 'flow', texto:
       'Buscar en la niebla cuesta energía, y la energía se regenera con el tiempo. Los dos cañones pagan lo mismo.' },
+    { titulo: 'Aprende jugando: la Ruta en 4 rondas', visual: 'route', texto:
+      'El juego completo es un battle royale, pero la Ruta de aprendizaje te enseña una idea por ronda, sin exámenes: juegas y, al terminar, ves qué pasó y por qué.\n' +
+      'Si es tu primera vez, empieza por ahí: está en la pantalla de inicio.' },
     { titulo: 'Controles', visual: 'keys', texto: '' },
+    { titulo: 'Qué te avisa el juego', visual: 'events', texto:
+      'Los mensajes de la pantalla dicen qué acaba de pasar. Además, a la izquierda aparecen tarjetas que definen cada término la primera vez que lo ves, y explican cada disparo con sus números.' },
     { titulo: 'Dos cañones, misma energía', visual: 'cannons', texto:
       'Clásico: cada consulta revisa un sector y lo descarta (se ve en gris).\n' +
       'Cuántico: la cuña de color es la amplitud (cian positiva, rosa negativa) y el cono amarillo es la probabilidad, la amplitud al cuadrado.\n' +
@@ -381,9 +595,14 @@
     { titulo: 'Tu cañón cuántico es un circuito', visual: 'circuit', texto:
       'Recoge piezas: H (superposición), M (marcador) y D (difusor). Cada par M + D es una iteración, es decir, un valor de k. R suelta la última pieza.\n' +
       'Prueba distintos k y mira cómo cambia el circuito y el acierto teórico.' },
+    { titulo: 'Laboratorio de k', visual: 'lab', texto:
+      'Las columnas son las amplitudes: cian si son positivas, rosas si son negativas. Los conos amarillos son las probabilidades. La placa blanca marca el sector buscado.\n' +
+      'Sube k y mira cómo crece la amplitud del sector buscado. Con k = 3 se pasa y vuelve a bajar.' },
     { titulo: 'La trampa de pasarse', visual: 'chart', texto:
       'Con 8 sectores y sin ruido, el cuántico mejora hasta k = 2 y después baja: con k = 3 la amplitud “da la vuelta”.\n' +
       'El clásico con k consultas acierta (k+1)/8: sube siempre, pero despacio.' },
+    { titulo: 'Glosario', visual: 'glossary', texto:
+      'Las palabras del juego, por si alguna no quedó clara. Pulsa un grupo para abrirlo.' },
     { titulo: 'Una partida no demuestra nada', texto:
       'Al final verás los aciertos observados frente a la teoría. Con pocos disparos pueden alejarse mucho: es variación normal.\n' +
       'Es una simulación didáctica de 3 qubits, no hardware cuántico. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada, pero con 8 sectores esto no demuestra una ventaja práctica.' }
@@ -537,6 +756,58 @@
     return all;
   }
 
+  // Lista de términos: negrita + definición.
+  function termList(ids) {
+    var box = el('div', undefined, 'terms');
+    ids.forEach(function (id) {
+      var d = DEFS[id]; if (!d) return;
+      var row = el('div', undefined, 'term');
+      row.appendChild(el('b', d.t)); row.appendChild(document.createTextNode(' · ' + d.d));
+      box.appendChild(row);
+    });
+    return box;
+  }
+
+  function visGlossary() {
+    var box = el('div', undefined, 'glossary');
+    GLOSSARY.forEach(function (grp, i) {
+      var d = el('details'); if (i === 0) d.open = true;
+      d.appendChild(el('summary', grp.g));
+      d.appendChild(termList(grp.ids));
+      box.appendChild(d);
+    });
+    return box;
+  }
+
+  function visEvents() {
+    var wrap = el('div', undefined, 'scroll'), t = el('table', undefined, 'map'), head = el('tr');
+    ['Aviso en pantalla', 'Qué significa'].forEach(function (h) { head.appendChild(el('th', h)); });
+    t.appendChild(head);
+    EVENTS.forEach(function (r) {
+      var tr = el('tr'); tr.appendChild(el('td', r[0])); tr.appendChild(el('td', r[1])); t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    return wrap;
+  }
+
+  // La Ruta de aprendizaje: una idea por ronda. Usa Content.rounds si existe.
+  function visRoute() {
+    var C = window.Content, rounds = C && Array.isArray(C.rounds) ? C.rounds : [];
+    var box = el('div', undefined, 'flow');
+    ROUTE_INFO.forEach(function (r, i) {
+      var step = el('div', undefined, 'fstep'), body = el('div');
+      var title = (rounds[i] && rounds[i].titulo) || r.t;
+      step.appendChild(el('div', String(i + 1), 'fnum'));
+      body.appendChild(el('b', 'Ronda ' + (i + 1) + ' · ' + title));
+      body.appendChild(el('div', (rounds[i] && rounds[i].objetivo) || r.goal));
+      var learn = el('div', 'Aprendes: ' + r.learn, 'learn');
+      body.appendChild(learn);
+      step.appendChild(body);
+      box.appendChild(step);
+    });
+    return box;
+  }
+
   var circuitK = 2;   // se conserva al navegar entre diapositivas
   function visCircuit() {
     var box = el('div', undefined, 'circuit');
@@ -595,7 +866,52 @@
     return all;
   }
 
-  var VISUALS = { sectors: visSectors, flow: visFlow, keys: visKeys, cannons: visCannons, mapping: visMapping, circuit: visCircuit, chart: visChart };
+  // Laboratorio: anillo 3D (si hay WebGL) o el mismo dibujo 2D del juego, con botones de k.
+  function visLab() {
+    var box = el('div', undefined, 'lab'), sel = el('div', undefined, 'ksel'), out = el('p', undefined, 'readout');
+    var I = window.Intro3D, stage = el('div', undefined, 'labstage'), flat = null, three = false;
+    stage.setAttribute('aria-hidden', 'true');
+    box.appendChild(stage);
+    function amps2d(k) {
+      var s = I && I.labState ? I.labState(k, 3) : null, amps = [], probs = [];
+      for (var i = 0; i < 8; i++) {
+        var p = s ? s.probs[i] : (i === 3 ? guideProbs().quantum[k] : (1 - guideProbs().quantum[k]) / 7);
+        var re = s ? s.amps[i] : (i === 3 ? Math.sqrt(p) : -Math.sqrt(p));
+        amps.push({ re: re, im: 0 }); probs.push(p);
+      }
+      return { amps: amps, probs: probs, theory: probs[3] };
+    }
+    function show(k, textOnly) {
+      circuitK = k;
+      if (three) I.setLab(k);
+      else if (!textOnly) {
+        stage.classList.add('flat');
+        var fresh = demoCanvas('Cuántico, k = ' + k, amps2d(k), 'quantum');
+        if (flat) stage.replaceChild(fresh, flat); else stage.appendChild(fresh);
+        flat = fresh;
+      }
+      out.textContent = 'k = ' + k + ': acierto teórico del cuántico ' + pct(guideProbs().quantum[k]) + ' · clásico con ' + k + ' consultas ' + pct(guideProbs().classic[k]);
+      Array.prototype.forEach.call(sel.children, function (b, i) { b.setAttribute('aria-pressed', i === k ? 'true' : 'false'); });
+    }
+    [0, 1, 2, 3].forEach(function (k) {
+      var b = el('button', 'k = ' + k, 'alt'); b.type = 'button';
+      b.addEventListener('click', function () { show(k); });
+      sel.appendChild(b);
+    });
+    box.appendChild(sel); box.appendChild(out);
+    if (!(I && typeof I.startLab === 'function')) { show(circuitK); return box; }
+    show(circuitK, true);
+    // El 3D mide su contenedor: se arranca cuando la diapositiva ya está en el DOM.
+    setTimeout(function () {
+      if (!box.isConnected) return;
+      try { three = !!I.startLab(stage, circuitK); } catch (e) { three = false; }
+      if (three) overlayCleanup = function () { if (typeof I.stop === 'function') I.stop(); };
+      show(circuitK);
+    }, 0);
+    return box;
+  }
+
+  var VISUALS = { lab: visLab, route: visRoute, events: visEvents, glossary: visGlossary, sectors: visSectors, flow: visFlow, keys: visKeys, cannons: visCannons, mapping: visMapping, circuit: visCircuit, chart: visChart };
 
   function showGuide(onClose) {
     var slides = guideSlides(), idx = 0, closed = false;
@@ -621,6 +937,7 @@
     }
     function render() {
       var s = slides[idx];
+      runCleanup();
       o.box.textContent = '';
       o.box.appendChild(el('h1', 'CÓMO JUGAR'));
       o.box.appendChild(el('p', (idx + 1) + ' / ' + slides.length, 'step'));
@@ -669,11 +986,8 @@
     return wrap;
   }
 
-  function cardFor(log) {
+  function renderCard(card) {
     try {
-      var C = window.Content;
-      var card = C && C.cards && C.cards[C.pickCard(log)];
-      if (!card) return null;
       var box = el('div', undefined, 'card');
       box.appendChild(el('h3', String(card.titulo)));
       box.appendChild(el('p', String(card.intuitivo)));
@@ -684,6 +998,14 @@
         box.appendChild(d);
       }
       return box;
+    } catch (e) { return null; }
+  }
+
+  function cardFor(log) {
+    try {
+      var C = window.Content;
+      var card = C && C.cards && C.cards[C.pickCard(log)];
+      return card ? renderCard(card) : null;
     } catch (e) { return null; }
   }
 
@@ -728,5 +1050,32 @@
     o.box.appendChild(onceButton('Jugar otra vez', o, onReplay));
   }
 
-  window.UI = { drawHUD: drawHUD, drawSectors: drawSectors, showStart: showStart, showEnd: showEnd, showGuide: showGuide };
+  // Fin de una ronda de la Ruta de aprendizaje: qué pasó, la idea de la ronda y las palabras nuevas.
+  // info = { round, total, titulo, card, passed, log }; next() empieza la ronda siguiente (o repite).
+  function showRoundEnd(info, next) {
+    info = info || {};
+    var o = openOverlay(), rows = summarize(info.log), passed = !!info.passed;
+    var round = Math.round(num(info.round)), total = Math.round(num(info.total)) || ROUTE_INFO.length;
+    o.box.appendChild(el('h1', 'RONDA ' + round + ' DE ' + total + (passed ? ' · SUPERADA' : ' · SIGUE INTENTANDO')));
+    if (info.titulo) o.box.appendChild(el('h2', String(info.titulo)));
+    if (!passed) o.box.appendChild(el('p', 'No pasa nada: la ronda se repite y puedes mirar la tarjeta antes de volver a intentarlo.'));
+    var C = window.Content, card = C && C.cards && C.cards[info.card];
+    var cardBox = card ? renderCard(card) : null;
+    if (cardBox) { o.box.appendChild(el('h3', 'La idea de esta ronda')); o.box.appendChild(cardBox); }
+    var r = ROUTE_INFO[round - 1];
+    if (r) { o.box.appendChild(el('h3', 'Palabras de esta ronda')); o.box.appendChild(termList(r.terms)); }
+    if (rows.length) {
+      o.box.appendChild(el('h3', 'Lo que pasó: observado vs. teoría'));
+      o.box.appendChild(statsTable(rows));
+      o.box.appendChild(el('p', 'Con pocos disparos lo observado se aleja de la teoría: es normal.'));
+    }
+    var last = round >= total;
+    o.box.appendChild(onceButton(passed ? (last ? 'Ir al battle royale' : 'Siguiente ronda') : 'Reintentar', o, next));
+  }
+
+  window.UI = {
+    drawHUD: drawHUD, drawSectors: drawSectors, showStart: showStart, showEnd: showEnd, showGuide: showGuide,
+    showRoundEnd: showRoundEnd, defs: DEFS, glossary: GLOSSARY, teachEvents: teachEvents,
+    teachReset: function () { TEACH.seen = {}; TEACH.prev = null; TEACH.logRef = null; TEACH.logLen = 0; TEACH.queue = []; TEACH.cur = null; }
+  };
 })();
