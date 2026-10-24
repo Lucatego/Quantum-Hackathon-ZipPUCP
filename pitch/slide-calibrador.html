@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide: calibrador de fase</title>
+<style>
+  :root { --bg:#0e1220; --fg:#e8ecf4; --mut:#9aa6c4; --grid:#2a3350; --q:#4da3ff; --ph:#f5b942; --ok:#5fd38d; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
+  .slide { max-width:1100px; margin:0 auto; padding:24px 20px 32px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 18px; }
+  .cols { display:grid; grid-template-columns:1.3fr 1fr; gap:24px; align-items:start; }
+  @media (max-width:800px){ .cols{ grid-template-columns:1fr; } }
+  svg { width:100%; height:auto; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; margin-top:6px; }
+  .legend span::before { content:""; display:inline-block; width:12px; height:3px; margin-right:6px; vertical-align:middle; background:currentColor; }
+  .q { color:var(--q); } .ph { color:var(--ph); } .ok { color:var(--ok); }
+  ul { margin:0; padding-left:18px; line-height:1.55; }
+  li { margin-bottom:8px; }
+  .note { color:var(--mut); font-size:13px; margin-top:16px; line-height:1.5; }
+  code { background:#161c30; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="slide">
+  <h1>El cañón aprende su propia fase</h1>
+  <p class="sub">Con 3 iteraciones el Grover estándar se pasa y acierta solo 33 %. Ajustando una fase φ con descenso de gradiente, llega a 100 %.</p>
+
+  <div class="cols">
+    <div>
+      <svg id="chart" viewBox="0 0 520 300" role="img" aria-label="Acierto medio y fase φ por paso de entrenamiento"></svg>
+      <div class="legend"><span class="q">Acierto medio (8 sectores)</span><span class="ph">φ (grados)</span></div>
+    </div>
+    <div>
+      <ul>
+        <li><b>Qué se entrena:</b> una sola fase φ compartida por el marcador y el difusor. Es un circuito parametrizado, igual que en un circuito variacional de QML.</li>
+        <li><b>Cómo:</b> la derivada sale de la <b>regla de desplazamiento de parámetros</b>: se evalúa el circuito con φ ± π/2 en cada compuerta y se restan. Coincide con diferencias finitas (error ~1e-11).</li>
+        <li><b>Qué mide:</b> el acierto <b>promedio sobre los 8 sectores</b>, así que el entrenamiento no necesita saber dónde está el enemigo.</li>
+        <li><b>Dónde llega:</b> <span class="ok">φ ≈ 78,0°, 100 % en los 8 sectores</span>. Es la búsqueda exacta de Long (2001), verificada con Qiskit <code>Statevector</code>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Tabla de fases exactas (N = 8):</b> k = 2 → 121,9° · k = 3 → 78,0° · k = 4 → 58,8°. Con k = 1 no existe solución exacta (el máximo es 78,1 %).<br>
+    <b>Dato de diseño:</b> φ = π (Grover estándar) es un punto estacionario: la derivada ahí vale 0 y el entrenamiento no se mueve. La curva arranca en φ = π − 0,3 rad (162,8°). Con paso 0,5 converge en ~8 pasos; con paso 1,5 oscila (sirve para enseñar qué es la tasa de aprendizaje).<br>
+    <b>Límites:</b> es una simulación sin ruido de circuito; con ruido el máximo baja. Es un ejemplo pedagógico de entrenar un circuito parametrizado, no un resultado de ML ni de ventaja cuántica práctica. Los números salen de <code>Quantum.gradient</code> (js/quantum.js), no están escritos a mano.
+  </p>
+</div>
+
+<script>
+  // Datos de Quantum.gradient con k = 3, φ0 = π − 0,3 rad, paso 0,5 (ver docs/quantum.md §7).
+  var curve = [[162.8,36],[157,38.4],[149.3,42.7],[138.9,50.3],[125.3,63],[108.5,80.7],[91.6,95.4],[81.2,99.7],[78.4,100],[78.1,100],[78,100],[78,100],[78,100],[78,100],[78,100]];
+  var W = 520, H = 300, L = 46, R = 46, T = 14, B = 38;
+  function x(i) { return L + (W - L - R) * i / (curve.length - 1); }
+  function yP(p) { return T + (H - T - B) * (1 - p / 100); }
+  function yF(f) { return T + (H - T - B) * (1 - (f - 60) / (180 - 60)); }
+  var s = '';
+  [0, 25, 50, 75, 100].forEach(function (p) {
+    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yP(p) + '" y2="' + yP(p) + '" stroke="var(--grid)"/>' +
+         '<text x="' + (L - 6) + '" y="' + (yP(p) + 4) + '" text-anchor="end" font-size="11" fill="var(--q)">' + p + ' %</text>';
+  });
+  [60, 90, 120, 150, 180].forEach(function (f) {
+    s += '<text x="' + (W - R + 6) + '" y="' + (yF(f) + 4) + '" font-size="11" fill="var(--ph)">' + f + '°</text>';
+  });
+  [0, 4, 8, 12, 14].forEach(function (i) {
+    s += '<text x="' + x(i) + '" y="' + (H - 18) + '" text-anchor="middle" font-size="11" fill="var(--mut)">' + i + '</text>';
+  });
+  s += '<text x="' + ((L + W - R) / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="11" fill="var(--mut)">paso de entrenamiento</text>';
+  s += '<polyline fill="none" stroke="var(--ph)" stroke-width="2" stroke-dasharray="5 4" points="' + curve.map(function (c, i) { return x(i) + ',' + yF(c[0]); }).join(' ') + '"/>';
+  s += '<polyline fill="none" stroke="var(--q)" stroke-width="2.5" points="' + curve.map(function (c, i) { return x(i) + ',' + yP(c[1]); }).join(' ') + '"/>';
+  curve.forEach(function (c, i) { s += '<circle cx="' + x(i) + '" cy="' + yP(c[1]) + '" r="3.2" fill="var(--q)"/>'; });
+  document.getElementById('chart').innerHTML = s;
+</script>
+</body>
+</html>
