@@ -133,8 +133,158 @@
     }
     ctx.restore();
   }
-  function showStart(onPlay) {}
-  function showEnd(log, onReplay) {}
+  // ---- Overlays (fase 3) ----
+  var OVERLAY_ID = 'ui-overlay';
+  var DEFAULT_START = [
+    'Hay un enemigo escondido en la niebla, en uno de 8 sectores.',
+    'Elige cañón: el clásico descarta sectores; el cuántico amplifica el correcto.',
+    'Misma energía y mismo sensor para los dos. Compara y decide.'
+  ];
+
+  function injectStyle() {
+    if (document.getElementById('ui-style')) return;
+    var s = document.createElement('style');
+    s.id = 'ui-style';
+    s.textContent =
+      '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-start;justify-content:center;overflow:auto;' +
+      'background:rgba(14,18,32,.94);color:' + COLOR.text + ';font:15px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
+      '#' + OVERLAY_ID + ' .box{width:100%;max-width:640px;margin:auto}' +
+      '#' + OVERLAY_ID + ' h1{margin:0 0 12px;letter-spacing:.12em;color:' + COLOR.pos + '}' +
+      '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
+      '#' + OVERLAY_ID + ' button{min-height:44px;padding:0 18px;margin:8px 8px 0 0;font:600 15px system-ui,sans-serif;color:#0e1220;' +
+      'background:' + COLOR.pos + ';border:0;border-radius:10px;cursor:pointer}' +
+      '#' + OVERLAY_ID + ' button.alt{background:transparent;color:' + COLOR.text + ';border:1px solid ' + COLOR.guide + '}' +
+      '#' + OVERLAY_ID + ' .scroll{overflow-x:auto}' +
+      '#' + OVERLAY_ID + ' table{border-collapse:collapse;width:100%;min-width:420px}' +
+      '#' + OVERLAY_ID + ' th,#' + OVERLAY_ID + ' td{padding:6px 8px;text-align:right;border-bottom:1px solid ' + COLOR.guide + '}' +
+      '#' + OVERLAY_ID + ' th:first-child,#' + OVERLAY_ID + ' td:first-child{text-align:left}' +
+      '#' + OVERLAY_ID + ' .card{background:rgba(232,236,244,.07);border-left:4px solid ' + COLOR.prob + ';border-radius:8px;padding:4px 14px 12px}' +
+      '#' + OVERLAY_ID + ' summary{cursor:pointer;color:' + COLOR.prob + ';min-height:44px;display:flex;align-items:center}' +
+      '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:13px}';
+    document.head.appendChild(s);
+  }
+
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text !== undefined) e.textContent = text;     // siempre textContent: los datos nunca se interpretan como HTML
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  // Crea el overlay (reemplaza uno previo) y devuelve {root, box, close}.
+  function openOverlay() {
+    injectStyle();
+    var old = document.getElementById(OVERLAY_ID);
+    if (old) old.remove();
+    var root = el('div'); root.id = OVERLAY_ID;
+    var box = el('div', undefined, 'box');
+    root.appendChild(box);
+    document.body.appendChild(root);
+    return { box: box, close: function () { root.remove(); } };
+  }
+
+  // Botón de un solo uso: cierra el overlay y llama cb una vez.
+  function onceButton(label, o, cb, alt) {
+    var done = false, b = el('button', label, alt ? 'alt' : '');
+    b.type = 'button';
+    b.addEventListener('click', function () {
+      if (done) return;
+      done = true;
+      o.close();
+      if (typeof cb === 'function') cb();
+    });
+    return b;
+  }
+
+  function pct(v) { return (v * 100).toFixed(1).replace('.', ',') + ' %'; }
+
+  function showStart(onPlay) {
+    var o = openOverlay();
+    var lines = window.Content && Array.isArray(window.Content.start) && window.Content.start.length ? window.Content.start : DEFAULT_START;
+    o.box.appendChild(el('h1', 'COLLAPSE'));
+    lines.forEach(function (l) { o.box.appendChild(el('p', String(l))); });
+    o.box.appendChild(onceButton('Jugar', o, onPlay));
+  }
+
+  // Agrupa el log por cañón × k: disparos, aciertos y teoría (promedio de log.theory).
+  function summarize(log) {
+    var groups = {};
+    (Array.isArray(log) ? log : []).forEach(function (l) {
+      if (!l || (l.cannon !== 'classic' && l.cannon !== 'quantum')) return;
+      var k = Math.round(num(l.k)), key = l.cannon + '|' + k;
+      var g = groups[key] || (groups[key] = { cannon: l.cannon, k: k, shots: 0, hits: 0, theory: 0 });
+      g.shots++; if (l.hit) g.hits++; g.theory += num(l.theory);
+    });
+    return Object.keys(groups).map(function (key) { var g = groups[key]; g.theory /= g.shots; return g; })
+      .sort(function (a, b) { return a.cannon === b.cannon ? a.k - b.k : (a.cannon === 'classic' ? -1 : 1); });
+  }
+
+  function statsTable(rows) {
+    var wrap = el('div', undefined, 'scroll'), t = el('table'), head = el('tr');
+    ['Cañón', 'k', 'Disparos', 'Aciertos', 'Observado', 'Teórico'].forEach(function (h) { head.appendChild(el('th', h)); });
+    t.appendChild(head);
+    rows.forEach(function (g) {
+      var tr = el('tr');
+      [g.cannon === 'quantum' ? 'Cuántico' : 'Clásico', String(g.k), String(g.shots), String(g.hits), pct(g.hits / g.shots), pct(g.theory)]
+        .forEach(function (c) { tr.appendChild(el('td', c)); });
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    return wrap;
+  }
+
+  function cardFor(log) {
+    try {
+      var C = window.Content;
+      var card = C && C.cards && C.cards[C.pickCard(log)];
+      if (!card) return null;
+      var box = el('div', undefined, 'card');
+      box.appendChild(el('h3', String(card.titulo)));
+      box.appendChild(el('p', String(card.intuitivo)));
+      if (card.profundo) {
+        var d = el('details');
+        d.appendChild(el('summary', 'Ver más'));
+        d.appendChild(el('p', String(card.profundo)));
+        box.appendChild(d);
+      }
+      return box;
+    } catch (e) { return null; }
+  }
+
+  function qiskitBlock(rows) {
+    try {
+      if (!window.Quantum || typeof window.Quantum.toQiskit !== 'function') return null;
+      var best = null;                                   // k cuántico más usado; por defecto 2
+      rows.forEach(function (g) { if (g.cannon === 'quantum' && (!best || g.shots > best.shots)) best = g; });
+      var code = window.Quantum.toQiskit(best ? best.k : 2);
+      if (typeof code !== 'string' || !code) return null;
+      var box = el('div');
+      box.appendChild(el('h3', 'Tu circuito en Qiskit (k = ' + (best ? best.k : 2) + ')'));
+      box.appendChild(el('pre', code));
+      var copy = el('button', 'Copiar código', 'alt');
+      copy.type = 'button';
+      copy.addEventListener('click', function () {
+        try { navigator.clipboard.writeText(code); copy.textContent = 'Copiado'; } catch (e) { copy.textContent = 'Selecciona y copia'; }
+      });
+      box.appendChild(copy);
+      return box;
+    } catch (e) { return null; }
+  }
+
+  function showEnd(log, onReplay) {
+    var o = openOverlay(), rows = summarize(log);
+    o.box.appendChild(el('h1', 'FIN DE LA PARTIDA'));
+    if (rows.length) {
+      o.box.appendChild(el('h2', 'Observado vs. teoría'));
+      o.box.appendChild(statsTable(rows));
+      o.box.appendChild(el('p', 'Con pocas partidas lo observado se aleja de la teoría: es normal.'));
+    } else {
+      o.box.appendChild(el('p', 'No hubo disparos de búsqueda en esta partida.'));
+    }
+    var card = cardFor(log); if (card) o.box.appendChild(card);
+    var q = qiskitBlock(rows); if (q) o.box.appendChild(q);
+    o.box.appendChild(onceButton('Jugar otra vez', o, onReplay));
+  }
 
   window.UI = { drawHUD: drawHUD, drawSectors: drawSectors, showStart: showStart, showEnd: showEnd };
 })();
