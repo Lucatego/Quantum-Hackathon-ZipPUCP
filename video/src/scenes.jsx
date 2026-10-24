@@ -3,6 +3,7 @@ import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import data from './data.json';
 import { C, FONT, MONO, pct } from './theme.js';
 import { Ring } from './Ring.jsx';
+import { Ground, Ring3D, Stage, Tank3D } from './Scene3D.jsx';
 import { Caption, Chip, H2, Left, P, Rise, Scene, mix, prog } from './helpers.jsx';
 
 const T = data.target;
@@ -15,9 +16,11 @@ export const Intro = ({ duration }) => {
   const grow = prog(f, 20, 90);
   return (
     <Scene duration={duration}>
-      <svg width={1920} height={1080} style={{ position: 'absolute', inset: 0 }}>
-        <Ring cx={CX} cy={CY} mode="quantum" amps={k2.amps.map((a) => a * grow)} probs={k2.probs.map((p) => p * grow)} labels={false} opacity={0.95} />
-      </svg>
+      <Stage width={1000} height={1080} style={{ left: 920, top: 0 }} camPos={[8.8 * Math.cos(0.6 + f * 0.012), 5.2, 8.8 * Math.sin(0.6 + f * 0.012)]}>
+        <Ground />
+        <Ring3D amps={k2.amps.map((a) => a * grow)} probs={k2.probs.map((p) => p * grow)} />
+        <Tank3D />
+      </Stage>
       <Left>
         <Rise at={0}><div style={{ fontSize: 34, letterSpacing: 6, fontWeight: 700, color: C.prob }}>CLÁSICO VS. CUÁNTICO</div></Rise>
         <Rise at={10}><div style={{ fontSize: 150, fontWeight: 900, letterSpacing: 6, lineHeight: 1 }}>COLLAPSE</div></Rise>

@@ -83,7 +83,7 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 - Salida: `assets/*.webm` y `*.mp4`; si se usa en el juego, `<video muted loop playsinline>` con imagen de respaldo.
 - Con un asistente de código se puede iterar escribiendo la composición en lenguaje natural y renderizando previsualizaciones; **la revisión humana de textos y cifras sigue siendo obligatoria**.
 
-### Fase 5: rendimiento y cierre (30 min, obligatoria)
+### Fase 5: rendimiento y cierre (30 min, obligatoria) — HECHA en `feat/ui` (falta medir fps en un celular real)
 - **Rendimiento:** limitar `devicePixelRatio` a 1,5–2, sin sombras, geometrías simples, `requestAnimationFrame` pausado si la pestaña no está visible, `stop()` al pulsar Jugar para que el juego tenga toda la GPU.
 - **Móvil:** probar a 360 px en un celular real; menos partículas en pantallas pequeñas.
 - **Accesibilidad:** contraste de subtítulos, `prefers-reduced-motion`, botones ≥ 44 px, el 3D no debe tapar los botones.
@@ -113,3 +113,12 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 - **Inicio reordenado (referencia: .io como Slither/Agar/Surviv):** título + una frase + **Jugar** grande + "Cómo jugar", chips de contexto y el resto en un bloque plegable "Más sobre el juego". La escena ocupa la derecha en escritorio (≥ 860 px) y la franja superior en celular, para no tapar el texto.
 - **Fase 2 hecha:** bucle k = 0 → marcador → k = 1 → 2 → 3 con subtítulos con cifras del simulador y niebla de partículas; título con entrada animada.
 - **Respaldo exacto:** sin `Quantum` la escena usa la forma cerrada de Grover (sin((2k+1)θ)), que da 12,5 / 78,1 / 94,5 / 33,0 %.
+
+## Fase 5: lo que se hizo
+- **Calidad adaptativa:** si el promedio de tiempo por fotograma supera ~34 ms (menos de ~30 fps) tras 40 fotogramas, la escena baja **una sola vez** (resolución 1:1 y sin niebla) y no vuelve a subir. Verificado con el Three.js real: a 63 fps mantiene 1,5 y a 15 fps baja a 1.
+- **Pantallas chicas** (< 600 px): sin antialias y resolución máxima 1,25.
+- **Accesibilidad:** el contenedor de la escena y el subtítulo van con `aria-hidden` (son ilustración); `prefers-reduced-motion` muestra solo el estado k = 2.
+- **Carga:** `three.min.js` (608 KB sin comprimir) se carga con `defer` para no bloquear el HTML.
+- **Honestidad:** el subtítulo lleva la nota "Ilustración con datos del simulador".
+- **Ya estaban:** DPR limitado, pausa con la pestaña oculta, `Intro3D.stop()` al pulsar Jugar y respaldo 2D sin WebGL.
+- **Pendiente:** medir los fps en un celular real y revisar a 360 px (lo que no puedo hacer sin navegador).

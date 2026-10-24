@@ -90,6 +90,11 @@
     };
   }
 
+  // Calidad adaptativa: si el promedio de tiempo por fotograma pasa de ~30 fps, se baja una sola vez
+  // (resolución 1:1 y sin niebla) y no se vuelve a subir, para evitar parpadeos de calidad.
+  var SLOW_MS = 34;
+  function nextQuality(level, avgMs) { return level >= 1 ? 1 : (avgMs > SLOW_MS ? 1 : 0); }
+
   function camDistance(aspect) { return aspect < 1.3 ? Math.min(11, 6.2 * 1.3 / aspect) : 6.2; }
 
   // ---- Escena ----
@@ -149,14 +154,19 @@
     c.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);bottom:4%;width:max-content;max-width:min(92%,520px);' +
       'text-align:center;font:15px/1.4 system-ui,sans-serif;color:#e8ecf4;background:rgba(14,18,32,.72);padding:8px 14px;' +
       'border-radius:12px;pointer-events:none;transition:opacity .25s';
+    var t = document.createElement('div'), n = document.createElement('div');
+    n.textContent = 'Ilustración con datos del simulador';
+    n.style.cssText = 'font-size:14px;opacity:.65;margin-top:4px';
+    c.appendChild(t); c.appendChild(n);
     container.appendChild(c);
-    return c;
+    return { root: c, text: t };
   }
 
   function buildScene(T, container) {
     var w = Math.max(1, container.clientWidth || window.innerWidth), h = Math.max(1, container.clientHeight || window.innerHeight);
-    var renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    var small = window.innerWidth < 600;
+    var renderer = new T.WebGLRenderer({ antialias: !small, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, small ? 1.25 : 1.5));
     renderer.setSize(w, h, false);
     renderer.setClearColor(0x000000, 0);
     var canvas = renderer.domElement;
@@ -193,7 +203,7 @@
       s.col.material.color.setHex(amp < 0 ? PAL.neg : PAL.pos);
       s.cone.scale.y = Math.max(0.03, Math.min(1, st.probs[i]) * H);
     }
-    if (st.caption !== l.lastCaption) { l.lastCaption = st.caption; l.caption.textContent = st.caption; }
+    if (st.caption !== l.lastCaption) { l.lastCaption = st.caption; l.caption.text.textContent = st.caption; }
   }
 
   function placeCamera(l, angle) {
@@ -202,10 +212,26 @@
     l.camera.lookAt(0, 0.4, 0);
   }
 
+  function degrade(l) {
+    l.quality = 1;
+    l.renderer.setPixelRatio(1);
+    if (l.onResize) l.onResize();
+    l.fog.pts.visible = false;
+  }
+
   function frame(t) {
     if (!live) return;
     if (live.t0 === null) live.t0 = t;
     var ms = t - live.t0;
+    if (live.last !== null) {
+      var dt = t - live.last;
+      if (dt > 0 && dt < 250) {            // se ignoran saltos por cambio de pestaña
+        live.avg = live.avg === null ? dt : live.avg * 0.9 + dt * 0.1;
+        live.frames++;
+        if (live.frames > 40 && live.quality === 0 && nextQuality(0, live.avg) === 1) degrade(live);
+      }
+    }
+    live.last = t;
     applyState(live, stateAt(live.seq, ms));
     driftFog(live.fog, ms / 1000);
     placeCamera(live, ms * 0.00012);
@@ -221,7 +247,7 @@
     try {
       var s = buildScene(T, container);
       live = { renderer: s.renderer, scene: s.scene, camera: s.camera, canvas: s.canvas, sectors: s.sectors, fog: s.fog, caption: s.caption,
-        container: container, raf: 0, t0: null, lastCaption: null, seq: sequence(3) };
+        container: container, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: sequence(3) };
       live.onResize = function () {
         var w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
         live.renderer.setSize(w, h, false); live.camera.aspect = w / h; live.camera.updateProjectionMatrix();
@@ -254,11 +280,11 @@
     });
     l.renderer.dispose();
     if (l.canvas && l.canvas.parentNode) l.canvas.parentNode.removeChild(l.canvas);
-    if (l.caption && l.caption.parentNode) l.caption.parentNode.removeChild(l.caption);
+    if (l.caption && l.caption.root.parentNode) l.caption.root.parentNode.removeChild(l.caption.root);
   }
 
   window.Intro3D = {
     start: start, stop: stop, layout: layout, polar: polar, defaultResult: defaultResult, getResult: getResult,
-    sequence: sequence, stateAt: stateAt, timing: { HOLD: HOLD, MOVE: MOVE }
+    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, timing: { HOLD: HOLD, MOVE: MOVE }
   };
 })();

@@ -158,4 +158,12 @@
       assertEq(Intro3D.stateAt(seq, T.HOLD + T.MOVE * 0.8).caption, seq[1].caption, 'después de la mitad');
     });
   });
+
+  // ---------- Calidad adaptativa (fase 5) ----------
+  test('Intro3D.nextQuality: baja una vez si va lento y nunca vuelve a subir (sin parpadeos)', function () {
+    assertEq(Intro3D.nextQuality(0, 16), 0, 'fluido se queda');
+    assertEq(Intro3D.nextQuality(0, 40), 1, 'lento baja');
+    assertEq(Intro3D.nextQuality(1, 16), 1, 'no vuelve a subir');
+    assertEq(Intro3D.nextQuality(1, 80), 1, 'no pasa del nivel máximo');
+  });
 })();

@@ -250,6 +250,7 @@
     if (!I || typeof I.start !== 'function') return;
     try {
       var stage = el('div', undefined, 'stage');
+      stage.setAttribute('aria-hidden', 'true');
       o.root.insertBefore(stage, o.box);
       if (I.start(stage)) {
         o.root.classList.add('intro');
