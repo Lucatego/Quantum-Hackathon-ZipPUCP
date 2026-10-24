@@ -157,6 +157,12 @@
   // en cuanto el mouse se mueve sobre el canvas; vuelve a 'keys' al tocar ← o →.
   let aimMode = 'keys';
   let lookAhead = 0;
+  let frameNo = 0;
+  // Rendimiento: ?fps muestra fps y ms por cuadro; la niebla y el fondo del minimapa se pre-dibujan.
+  const SHOW_FPS = typeof location !== 'undefined' && /[?&]fps\b/.test(location.search);
+  const perf = { ms: 16.7, fps: 60 };
+  const FOG_RES = 0.5;      // resolución de los sprites de niebla (es humo difuso: media resolución alcanza)
+  let minimapCache = null;
 
   // Pistas: cada una se muestra una sola vez por sesión (no se reinicia al jugar otra vez).
   const seenHints = new Set();
@@ -180,7 +186,17 @@
   }
 
   // 'tormenta' | 'niebla' | null. Es tormenta la niebla de un banco de tormenta o fuera de la zona segura.
+  // Se calcula muchas veces por cuadro para cada tanque: se memoriza por cuadro y posición.
   function zoneOf(p) {
+    if (p.isPlayer !== undefined) {
+      if (p._zf === frameNo && p._zx === p.x && p._zy === p.y) return p._zv;
+      p._zf = frameNo; p._zx = p.x; p._zy = p.y;
+      return (p._zv = zoneOfRaw(p));
+    }
+    return zoneOfRaw(p);
+  }
+
+  function zoneOfRaw(p) {
     let zone = null;
     for (const f of world.fog) {
       if (Math.hypot(p.x - f.x, p.y - f.y) >= f.r) continue;
@@ -426,6 +442,38 @@
 
   // Un banco de niebla es un grupo de círculos superpuestos (forma de humo). f.x, f.y y f.r son el
   // contorno de todo el banco; cada círculo guarda su desplazamiento y radio iniciales (dx0, dy0, r0).
+  function makeCanvas(w, h) {
+    try {
+      if (typeof document === 'undefined' || !document.createElement) return null;
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+      return c.getContext && c.getContext('2d') ? c : null;
+    } catch (e) { return null; }
+  }
+
+  // Dibuja los círculos de un banco con sus degradados en (ox, oy) a escala k.
+  function paintFogBlobs(g, f, rgb, ox, oy, k) {
+    for (const c of f.blobs) {
+      const cx = ox + c.dx0 * k, cy = oy + c.dy0 * k, r = c.r0 * k;
+      const gr = g.createRadialGradient(cx, cy, r * 0.45, cx, cy, r);
+      gr.addColorStop(0, 'rgba(' + rgb + ',0.42)');
+      gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+      g.fillStyle = gr;
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  // Sprite del banco a escala 1 (se crea una vez por banco y color; crecer o moverse es solo escalar la copia).
+  function fogSprite(f, rgb) {
+    f.sprites = f.sprites || {};
+    if (f.sprites[rgb] !== undefined) return f.sprites[rgb];
+    const size = 2 * f.rBound0 * FOG_RES, cv = makeCanvas(size, size);
+    if (cv) paintFogBlobs(cv.getContext('2d'), f, rgb, size / 2, size / 2, FOG_RES);
+    return (f.sprites[rgb] = cv);
+  }
+
   function makeFogBank(x, y, size, storm) {
     const blobs = [{ dx0: 0, dy0: 0, r0: size * 0.72 }];
     const n = 2 + Math.floor(Math.random() * 3);
@@ -1035,7 +1083,7 @@
         f.fade -= dt / config.dissipateTime;
         if (f.fade <= 0) {
           const q = fogSpawnPoint(), nb = makeFogBank(q.x, q.y, f.size, false);
-          Object.assign(f, nb, { fade: 0, state: 'formando' });
+          Object.assign(f, nb, { fade: 0, state: 'formando', sprites: null });
         }
       } else if (f.state === 'formando') {
         f.fade += dt / config.formTime;
@@ -1241,16 +1289,11 @@
     for (const f of world.fog) {
       if (f.x + f.r < cam.x || f.x - f.r > cam.x + v.w || f.y + f.r < cam.y || f.y - f.r > cam.y + v.h) continue;
       const rgb = f.storm || outsideSafe(f) ? '190,120,200' : '150,160,185';
-      for (const c of f.blobs) {
-        const cx = f.x + c.dx, cy = f.y + c.dy;
-        const g = ctx.createRadialGradient(cx, cy, c.r * 0.45, cx, cy, c.r);
-        g.addColorStop(0, 'rgba(' + rgb + ',0.42)');
-        g.addColorStop(1, 'rgba(' + rgb + ',0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(cx, cy, c.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      const k = f.r / f.rBound0, sp = fogSprite(f, rgb);
+      if (sp) {
+        const d = 2 * f.rBound0 * k;
+        ctx.drawImage(sp, f.x - d / 2, f.y - d / 2, d, d);
+      } else paintFogBlobs(ctx, f, rgb, f.x, f.y, k);   // sin canvas aparte: dibujo directo
       if (f.storm) {
         ctx.font = 'bold 14px system-ui, sans-serif';
         ctx.textAlign = 'center';
@@ -1344,28 +1387,41 @@
 
   // Minimapa (abajo a la derecha): niebla, tormenta, tu tanque, la vista de la cámara y solo los bots
   // que estás viendo (fuera de la niebla y cerca). Nunca muestra a los escondidos: eso es trabajo del radar.
-  function drawMinimap(v) {
-    const W = config.world.w, H = config.world.h;
-    const mw = Math.min(200, v.w * 0.3), s = mw / W, mh = H * s;
-    const mx = v.w - mw - 12, my = v.h - mh - 12, p = world.player;
-    ctx.fillStyle = 'rgba(8,10,20,0.75)';
-    ctx.fillRect(mx, my, mw, mh);
+  // Fondo del minimapa (niebla y zona): cambia despacio, así que se redibuja cada 0,5 s en una capa.
+  function paintMinimapBackground(g, s, mw, mh) {
+    g.fillStyle = 'rgba(8,10,20,0.75)';
+    g.fillRect(0, 0, mw, mh);
     for (const f of world.fog) {
-      ctx.fillStyle = f.storm ? 'rgba(190,120,200,0.5)' : 'rgba(150,160,185,0.35)';
+      g.fillStyle = f.storm ? 'rgba(190,120,200,0.5)' : 'rgba(150,160,185,0.35)';
       for (const c of f.blobs) {
-        ctx.beginPath();
-        ctx.arc(mx + (f.x + c.dx) * s, my + (f.y + c.dy) * s, c.r * s, 0, Math.PI * 2);
-        ctx.fill();
+        if (c.r <= 0) continue;
+        g.beginPath();
+        g.arc((f.x + c.dx) * s, (f.y + c.dy) * s, c.r * s, 0, Math.PI * 2);
+        g.fill();
       }
     }
     const z = world.zone;
     if (z.enabled) {
-      ctx.strokeStyle = 'rgba(214,179,255,0.9)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(mx + z.x * s, my + z.y * s, z.r * s, 0, Math.PI * 2);
-      ctx.stroke();
+      g.strokeStyle = 'rgba(214,179,255,0.9)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(z.x * s, z.y * s, z.r * s, 0, Math.PI * 2);
+      g.stroke();
     }
+  }
+
+  function drawMinimap(v) {
+    const W = config.world.w, H = config.world.h;
+    const mw = Math.min(200, v.w * 0.3), s = mw / W, mh = H * s;
+    const mx = v.w - mw - 12, my = v.h - mh - 12, p = world.player;
+    const mc = minimapCache;
+    if (!mc || mc.world !== world || mc.w !== Math.round(mw) || world.time - mc.t > 0.5 || world.time < mc.t) {
+      const cv = mc && mc.w === Math.round(mw) && mc.canvas ? mc.canvas : makeCanvas(mw, mh);
+      if (cv) { const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height); paintMinimapBackground(g, s, mw, mh); }
+      minimapCache = { world, w: Math.round(mw), t: world.time, canvas: cv };
+    }
+    if (minimapCache.canvas) ctx.drawImage(minimapCache.canvas, mx, my);
+    else { ctx.save(); ctx.translate(mx, my); paintMinimapBackground(ctx, s, mw, mh); ctx.restore(); }
     ctx.strokeStyle = 'rgba(232,236,244,0.35)';
     ctx.lineWidth = 1;
     ctx.strokeRect(mx + Math.max(0, cam.x) * s, my + Math.max(0, cam.y) * s, Math.min(W, v.w) * s, Math.min(H, v.h) * s);
@@ -1545,7 +1601,7 @@
 
   // ---------- input y loop ----------
   function resize() {
-    dpr = window.devicePixelRatio || 1;
+    dpr = Math.min(2, window.devicePixelRatio || 1);   // en celulares 3× serían 9 veces más píxeles
     canvas.width = Math.floor(window.innerWidth * dpr);
     canvas.height = Math.floor(window.innerHeight * dpr);
   }
@@ -1592,8 +1648,18 @@
     if (!running) return;
     const dt = Math.min(0.05, (now - lastTime) / 1000 || 0);
     lastTime = now;
+    frameNo++;
+    const t0 = performance.now();
     update(dt);
     render();
+    if (SHOW_FPS) {
+      perf.ms = perf.ms * 0.95 + (performance.now() - t0) * 0.05;
+      if (dt > 0) perf.fps = perf.fps * 0.95 + (1 / dt) * 0.05;
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = perf.fps < 30 ? '#ff6b9d' : '#80ed99';
+      ctx.fillText(Math.round(perf.fps) + ' fps · ' + perf.ms.toFixed(1) + ' ms por cuadro (update + render)', 12, viewSize().h - 8);
+    }
     requestAnimationFrame(frame);
   }
 
