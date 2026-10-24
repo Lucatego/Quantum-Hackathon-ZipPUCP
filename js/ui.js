@@ -151,6 +151,8 @@
       '#' + OVERLAY_ID + ' .box{width:100%;max-width:640px;margin:auto}' +
       '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
+      '#' + OVERLAY_ID + ' ul{margin:8px 0 0 18px;padding:0}' +
+      '#' + OVERLAY_ID + ' li{margin:6px 0}' +
       '#' + OVERLAY_ID + ' button{min-height:44px;padding:0 18px;margin:8px 8px 0 0;font:600 15px system-ui,sans-serif;color:#0e1220;' +
       'background:' + COLOR.pos + ';border:0;border-radius:10px;cursor:pointer}' +
       '#' + OVERLAY_ID + ' button.alt{background:transparent;color:' + COLOR.text + ';border:1px solid ' + COLOR.guide + '}' +
@@ -159,6 +161,7 @@
       '#' + OVERLAY_ID + ' th,#' + OVERLAY_ID + ' td{padding:6px 4px;text-align:right;border-bottom:1px solid ' + COLOR.guide + '}' +
       '#' + OVERLAY_ID + ' th:first-child,#' + OVERLAY_ID + ' td:first-child{text-align:left}' +
       '#' + OVERLAY_ID + ' .card{background:rgba(232,236,244,.07);border-left:4px solid ' + COLOR.prob + ';border-radius:8px;padding:4px 14px 12px}' +
+      '#' + OVERLAY_ID + ' .panel{background:rgba(232,236,244,.04);border:1px solid ' + COLOR.guide + ';border-radius:10px;padding:10px 12px;margin-top:14px}' +
       '#' + OVERLAY_ID + ' summary{cursor:pointer;color:' + COLOR.prob + ';min-height:44px;display:flex;align-items:center}' +
       '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}';
     document.head.appendChild(s);
@@ -198,11 +201,27 @@
 
   function pct(v) { return (v * 100).toFixed(1).replace('.', ',') + ' %'; }
 
+  function renderMessagePanel(title, items) {
+    if (!Array.isArray(items) || !items.length) return null;
+    var panel = el('div', undefined, 'panel');
+    panel.appendChild(el('h3', title));
+    var list = document.createElement('ul');
+    items.forEach(function (item) { var li = document.createElement('li'); li.textContent = String(item); list.appendChild(li); });
+    panel.appendChild(list);
+    return panel;
+  }
+
   function showStart(onPlay) {
     var o = openOverlay();
     var lines = window.Content && Array.isArray(window.Content.start) && window.Content.start.length ? window.Content.start : DEFAULT_START;
+    var myths = window.Content && Array.isArray(window.Content.myths) ? window.Content.myths : [];
+    var truths = window.Content && Array.isArray(window.Content.truths) ? window.Content.truths : [];
     o.box.appendChild(el('h1', 'COLLAPSE'));
     lines.forEach(function (l) { o.box.appendChild(el('p', String(l))); });
+    var bad = renderMessagePanel('Qué NO se debe creer', myths);
+    if (bad) o.box.appendChild(bad);
+    var good = renderMessagePanel('Qué sí queremos promover', truths);
+    if (good) o.box.appendChild(good);
     o.box.appendChild(onceButton('Jugar', o, onPlay));
   }
 
@@ -273,6 +292,8 @@
 
   function showEnd(log, onReplay) {
     var o = openOverlay(), rows = summarize(log);
+    var myths = window.Content && Array.isArray(window.Content.myths) ? window.Content.myths : [];
+    var truths = window.Content && Array.isArray(window.Content.truths) ? window.Content.truths : [];
     o.box.appendChild(el('h1', 'FIN DE LA PARTIDA'));
     if (rows.length) {
       o.box.appendChild(el('h2', 'Observado vs. teoría'));
@@ -281,6 +302,10 @@
     } else {
       o.box.appendChild(el('p', 'No hubo disparos de búsqueda en esta partida.'));
     }
+    var bad = renderMessagePanel('Qué NO se debe creer', myths);
+    if (bad) o.box.appendChild(bad);
+    var good = renderMessagePanel('Qué sí queremos promover', truths);
+    if (good) o.box.appendChild(good);
     var card = cardFor(log); if (card) o.box.appendChild(card);
     var q = qiskitBlock(rows); if (q) o.box.appendChild(q);
     o.box.appendChild(onceButton('Jugar otra vez', o, onReplay));

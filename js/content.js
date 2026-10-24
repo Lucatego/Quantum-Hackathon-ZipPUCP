@@ -74,6 +74,18 @@
     kCero: 'Con k = 0 no se consulta el sensor: los dos cañones disparan a ciegas y aciertan 1 de 8.'
   };
 
+  // Reformulamos explícitamente lo que NO hay que vender y lo que sí queremos difundir.
+  var myths = [
+    'No decimos que el cuántico "prueba todos los sectores a la vez" ni que la superposición elige la mejor respuesta automáticamente.',
+    'No afirmamos que la interferencia siempre ayuda ni que un circuito cuántico siempre es más rápido.',
+    'No ocultamos que el sensor ruidoso y el ruido del circuito importan: la ventaja real tiene condiciones y límites.'
+  ];
+  var truths = [
+    'La comparación es justa: mismo problema, mismo sensor, misma energía y mismo criterio de acierto.',
+    'El cuántico usa amplitudes con fase e interferencia para reforzar el sector correcto y cancelar los otros.',
+    'La ventaja real aparece en la búsqueda no estructurada y se enseña con evidencia: funciona bien, falla bien y se mide con datos reales.'
+  ];
+
   // Tarjeta más relevante según la partida. Prioridad fijada en TAREAS.md (fase 2); `amplitud` queda de respaldo.
   // Acepta entradas del log v1 (sin misreads/phaseNoise) y v2.
   function pickCard(log) {
@@ -149,6 +161,8 @@
       ['titulo', 'intuitivo', 'profundo'].forEach(function (f) { t['cards.' + k + '.' + f] = cards[k][f]; });
     });
     Object.keys(hints).forEach(function (k) { t['hints.' + k] = hints[k]; });
+    myths.forEach(function (s, i) { t['myths[' + i + ']'] = s; });
+    truths.forEach(function (s, i) { t['truths[' + i + ']'] = s; });
     return t;
   }
 
@@ -156,6 +170,8 @@
     start: start,
     cards: cards,
     hints: hints,
+    myths: myths,
+    truths: truths,
     pickCard: pickCard,
     checklist: checklist,
     audit: audit,
