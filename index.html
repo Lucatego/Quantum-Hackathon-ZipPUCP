@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Collapse</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0e1220; color: #e8ecf4; font-family: system-ui, sans-serif; overflow: hidden; }
+    canvas#game { display: block; width: 100vw; height: 100vh; }
+    #pending { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 16px; }
+    #pending h1 { margin: 0 0 8px; letter-spacing: .08em; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="pending">
+    <div>
+      <h1>COLLAPSE</h1>
+      <p>Prototipo en construcción.</p>
+      <p id="missing"></p>
+    </div>
+  </div>
+
+  <!-- Orden de carga del contrato (ver TAREAS.md). Si falta un módulo, la página muestra cuál. -->
+  <script src="js/content.js"></script>
+  <script src="js/quantum.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script>
+    window.addEventListener('load', function () {
+      var missing = ['Quantum', 'UI', 'Game'].filter(function (n) { return !window[n]; });
+      if (missing.length) {
+        document.getElementById('missing').textContent = 'Faltan módulos: ' + missing.join(', ');
+        document.getElementById('pending').style.display = 'grid';
+        return;
+      }
+      UI.showStart(function () { Game.start(); });
+    });
+  </script>
+</body>
+</html>
