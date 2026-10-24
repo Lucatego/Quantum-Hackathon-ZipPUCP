@@ -23,7 +23,7 @@
       goal: { hits: 3, zone: 'tormenta' }, quantum: true, storm: true, pieces: 'HMDMDS', card: 'ruidoDatos' },
   ];
   const ROUTE_CONFIG = {
-    world: { w: 2000, h: 1300 }, bots: 3, zoneEnabled: false, fogAlive: false, fogPhaseEvery: 1e9,
+    world: { w: 2000, h: 1300 }, bots: 3, cameraZoom: 1, zoneEnabled: false, fogAlive: false, fogPhaseEvery: 1e9,
     lootInitial: 0, lootEvery: 1e9, energyRegen: 20, botBulletDamage: 3, botSearchDamage: 3, botSearchCooldown: 6,
   };
 
@@ -42,8 +42,13 @@
   };
 
   const config = {
-    world: { w: 3200, h: 2200 },
-    bots: 10,
+    world: { w: 4800, h: 3200 },
+    bots: 14,
+    cameraZoom: 0.85,      // < 1 aleja la cámara (se ve más mapa); la demo y la ruta usan 1
+    // Niebla generada con semilla (solo en el mapa grande): cobertura objetivo al empezar y corredores.
+    fogCoverage: 0.35,     // fracción del mapa cubierta al empezar (crece hasta ~0,55 con fogMaxScale)
+    fogMaxBanks: 24,
+    fogCorridors: 3,       // bancos alargados que conectan zonas
     playerSpeed: 230,
     botSpeed: 110,
     bulletSpeed: 620,
@@ -81,8 +86,8 @@
     zoneDamage: 4,         // vida por segundo fuera de la zona
     // La niebla se expande por fases (como la zona de un battle royale): más escondites, más búsquedas.
     fogPhaseEvery: 25,     // segundos de juego entre expansiones
-    fogPhaseStep: 0.15,    // cuánto crece el radio en cada fase (× radio inicial)
-    fogMaxScale: 1.6,      // tamaño máximo (× radio inicial)
+    fogPhaseStep: 0.1,     // cuánto crece el radio en cada fase (× radio inicial)
+    fogMaxScale: 1.35,     // tamaño máximo (× radio inicial): ~35 % del mapa al empezar → ~55 % al final
     fogGrowSpeed: 0.05,    // velocidad de crecimiento durante una expansión (escala por segundo)
     // Niebla viva: el viento la arrastra y los bancos se disipan y reaparecen en otro lugar.
     fogAlive: true,
@@ -96,9 +101,9 @@
     // Loot de piezas de circuito (fase 3): el cañón cuántico se arma con lo que recoges, en ese orden.
     // Solo se activa si Quantum.runCircuit existe; si no, el cuántico sigue con k libre (Q/E).
     loot: true,
-    lootInitial: 12,       // piezas al empezar (además del kit garantizado)
-    lootEvery: 8,          // segundos de juego entre piezas nuevas
-    lootMax: 20,           // piezas en el piso como máximo
+    lootInitial: 18,       // piezas al empezar (además del kit garantizado)
+    lootEvery: 6,          // segundos de juego entre piezas nuevas
+    lootMax: 28,           // piezas en el piso como máximo
     lootWeights: { H: 20, M: 30, D: 30, S: 10 },
     circuitMax: 8,         // ranuras del circuito
     pieceRadius: 14,
@@ -474,17 +479,83 @@
     return (f.sprites[rgb] = cv);
   }
 
-  function makeFogBank(x, y, size, storm) {
-    const blobs = [{ dx0: 0, dy0: 0, r0: size * 0.72 }];
-    const n = 2 + Math.floor(Math.random() * 3);
-    const a0 = rand(0, Math.PI * 2);
-    for (let i = 0; i < n; i++) {
-      const a = a0 + (i / n) * Math.PI * 2 + rand(-0.4, 0.4), d = size * rand(0.35, 0.6);
-      blobs.push({ dx0: Math.cos(a) * d, dy0: Math.sin(a) * d, r0: size * rand(0.38, 0.55) });
+  // Generador pseudoaleatorio con semilla (mulberry32): la misma semilla da el mismo mapa.
+  function seededRandom(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ?semilla=N fija el mapa; ?dia usa la fecha (desafío del día: el mismo mapa para todos ese día).
+  function pickSeed() {
+    const q = typeof location !== 'undefined' ? location.search : '';
+    const m = /[?&]semilla=(\d+)/.exec(q);
+    if (m) return { seed: parseInt(m[1], 10) >>> 0, daily: null };
+    if (/[?&]dia\b/.test(q)) {
+      const d = new Date(), key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+      return { seed: (key * 2654435761) >>> 0, daily: d.toISOString().slice(0, 10) };
     }
+    return { seed: Math.floor(Math.random() * 4294967296) >>> 0, daily: null };
+  }
+
+  function finishBank(blobs, x, y, size, storm, corridor) {
     for (const c of blobs) { c.dx = c.dx0; c.dy = c.dy0; c.r = c.r0; }
     const bound = Math.max(...blobs.map((c) => Math.hypot(c.dx0, c.dy0) + c.r0));
-    return { x, y, r: bound, rBound0: bound, size, storm, blobs, fade: 1, state: 'estable' };
+    return { x, y, r: bound, rBound0: bound, size, storm, corridor: !!corridor, blobs, fade: 1, state: 'estable', sprites: null };
+  }
+
+  function makeFogBank(x, y, size, storm, rnd) {
+    const R = rnd || Math.random, rr = (a, b) => a + R() * (b - a);
+    const blobs = [{ dx0: 0, dy0: 0, r0: size * 0.72 }];
+    const n = 2 + Math.floor(R() * 3);
+    const a0 = rr(0, Math.PI * 2);
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * Math.PI * 2 + rr(-0.4, 0.4), d = size * rr(0.35, 0.6);
+      blobs.push({ dx0: Math.cos(a) * d, dy0: Math.sin(a) * d, r0: size * rr(0.38, 0.55) });
+    }
+    return finishBank(blobs, x, y, size, storm, false);
+  }
+
+  // Corredor: una fila de círculos a lo largo de una línea (un río de humo para moverse escondido).
+  function makeCorridor(x, y, size, rnd) {
+    const R = rnd || Math.random, rr = (a, b) => a + R() * (b - a);
+    const ang = rr(0, Math.PI), n = 6 + Math.floor(R() * 3), step = size * 0.55, blobs = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i - (n - 1) / 2) * step, wob = rr(-0.25, 0.25) * size;
+      blobs.push({ dx0: Math.cos(ang) * t - Math.sin(ang) * wob, dy0: Math.sin(ang) * t + Math.cos(ang) * wob, r0: size * rr(0.42, 0.55) });
+    }
+    return finishBank(blobs, x, y, size, false, true);
+  }
+
+  // Fracción del mapa cubierta por niebla (muestreo en grilla).
+  function fogCoverageOf(fog, W, H) {
+    let n = 0, tot = 0;
+    for (let gx = 0; gx < 60; gx++) for (let gy = 0; gy < 40; gy++) {
+      const x = (gx + 0.5) * W / 60, y = (gy + 0.5) * H / 40;
+      tot++;
+      if (fog.some((f) => f.blobs.some((c) => Math.hypot(x - f.x - c.dx0, y - f.y - c.dy0) < c.r0))) n++;
+    }
+    return n / tot;
+  }
+
+  // Mapa grande: corredores y bancos repartidos sin amontonarse hasta la cobertura objetivo.
+  function generateFog(W, H, rnd, avoid) {
+    const fog = [], rr = (a, b) => a + rnd() * (b - a);
+    for (let i = 0; i < config.fogCorridors; i++) fog.push(makeCorridor(rr(W * 0.15, W * 0.85), rr(H * 0.15, H * 0.85), rr(180, 230), rnd));
+    let tries = 0;
+    while (fog.length < config.fogMaxBanks && tries++ < 400) {
+      const size = rr(280, 460), x = rr(size, W - size), y = rr(size, H - size);
+      if (avoid && Math.hypot(x - avoid.x, y - avoid.y) < size + 260) continue;   // el inicio queda despejado
+      if (fog.some((f) => Math.hypot(x - f.x, y - f.y) < (f.size + size) * 0.65)) continue;
+      fog.push(makeFogBank(x, y, size, false, rnd));
+      if (fogCoverageOf(fog, W, H) >= config.fogCoverage) break;
+    }
+    return fog;
   }
 
   function makeZone(W, H) {
@@ -497,8 +568,13 @@
 
   function newWorld() {
     const W = config.world.w, H = config.world.h;
-    const layout = W >= 3000 ? FOG_LAYOUT_LARGE : FOG_LAYOUT_SMALL;
-    const fog = layout.map(([fx, fy, r, storm]) => makeFogBank(W * fx, H * fy, r, !!storm));
+    // Mapa chico (demo y ruta): disposición fija y probada. Mapa grande: generada con semilla.
+    const seedInfo = pickSeed();
+    Game.seed = seedInfo.seed;
+    Game.daily = seedInfo.daily;
+    const fog = W >= 4000
+      ? generateFog(W, H, seededRandom(seedInfo.seed), { x: W / 2, y: H * 0.82 })
+      : (W >= 3000 ? FOG_LAYOUT_LARGE : FOG_LAYOUT_SMALL).map(([fx, fy, r, storm]) => makeFogBank(W * fx, H * fy, r, !!storm));
     const hazards = [
       makeHazard(W * 0.5, H * 0.55, 64),
       makeHazard(W * 0.22, H * 0.33, 54),
@@ -1082,7 +1158,7 @@
       if (f.state === 'disipando') {
         f.fade -= dt / config.dissipateTime;
         if (f.fade <= 0) {
-          const q = fogSpawnPoint(), nb = makeFogBank(q.x, q.y, f.size, false);
+          const q = fogSpawnPoint(), nb = f.corridor ? makeCorridor(q.x, q.y, f.size) : makeFogBank(q.x, q.y, f.size, false);
           Object.assign(f, nb, { fade: 0, state: 'formando', sprites: null });
         }
       } else if (f.state === 'formando') {
@@ -1138,8 +1214,16 @@
     return { w: canvas.width / dpr, h: canvas.height / dpr };
   }
 
+  function zoom() { return config.cameraZoom || 1; }
+
+  // Tamaño de la vista en unidades del mundo (con la cámara alejada se ve más mapa).
+  function worldView() {
+    const v = viewSize(), z = zoom();
+    return { w: v.w / z, h: v.h / z };
+  }
+
   function updateCamera() {
-    const v = viewSize(), W = config.world.w, H = config.world.h, p = world.player;
+    const v = worldView(), W = config.world.w, H = config.world.h, p = world.player;
     // Con ↑ la cámara mira hacia donde apunta el cañón.
     const fx = p.x + Math.cos(p.angle) * lookAhead, fy = p.y + Math.sin(p.angle) * lookAhead;
     cam.x = W <= v.w ? (W - v.w) / 2 : clamp(fx - v.w / 2, 0, W - v.w);
@@ -1147,7 +1231,7 @@
   }
 
   function screenToWorld(sx, sy) {
-    return { x: sx + cam.x, y: sy + cam.y };
+    return { x: sx / zoom() + cam.x, y: sy / zoom() + cam.y };
   }
 
   function drawTank(t) {
@@ -1191,7 +1275,7 @@
   }
 
   function drawWorld() {
-    const v = viewSize(), W = config.world.w, H = config.world.h;
+    const v = worldView(), W = config.world.w, H = config.world.h;
     // Grilla
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
@@ -1424,7 +1508,8 @@
     else { ctx.save(); ctx.translate(mx, my); paintMinimapBackground(ctx, s, mw, mh); ctx.restore(); }
     ctx.strokeStyle = 'rgba(232,236,244,0.35)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(mx + Math.max(0, cam.x) * s, my + Math.max(0, cam.y) * s, Math.min(W, v.w) * s, Math.min(H, v.h) * s);
+    const wv = worldView();
+    ctx.strokeRect(mx + Math.max(0, cam.x) * s, my + Math.max(0, cam.y) * s, Math.min(W, wv.w) * s, Math.min(H, wv.h) * s);
     ctx.fillStyle = '#ff7a59';
     for (const b of world.bots) {
       if (!b.alive || (inFog(b) && b.revealed <= 0) || dist(b, p) > config.botSight * 1.5) continue;
@@ -1578,12 +1663,13 @@
     updateCamera();
     const sx = rand(-1, 1) * world.shake, sy = rand(-1, 1) * world.shake;
     ctx.save();
+    ctx.scale(zoom(), zoom());
     ctx.translate(-cam.x + sx, -cam.y + sy);
     drawWorld();
     ctx.restore();
 
     const p = world.player;
-    const px = p.x - cam.x, py = p.y - cam.y;
+    const px = (p.x - cam.x) * zoom(), py = (p.y - cam.y) * zoom();
     const UIm = window.UI;
     if (UIm && UIm.drawSectors) {
       if (world.search) UIm.drawSectors(ctx, px, py, world.search.result, world.search.cannon);
@@ -1682,7 +1768,7 @@
 
   // Se aplica antes de crear el mundo: la demo usa el mapa chico (ya probado) para que sea predecible.
   function demoConfig() {
-    applyOverrides({ world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, fogAlive: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+    applyOverrides({ world: { w: 2000, h: 1300 }, bots: 6, cameraZoom: 1, fogPhaseStep: 0.15, fogMaxScale: 1.6, zoneEnabled: false, fogAlive: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
   }
 
   // ?ruta o ?ruta=N en la URL arranca la Ruta de aprendizaje (solo en el primer inicio).
