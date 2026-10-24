@@ -6,6 +6,113 @@
 > **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
 > Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
 
+## Fase 3: progresión del cañón y aprendizaje (después de la demo)
+
+**Problema:** hoy el cañón no mejora. El cuántico está disponible desde el inicio con k libre (Q/E), y el aprendizaje solo llega por las pistas y las tarjetas finales. El brief (sección 8.4) pide que **el cañón se arme con piezas de circuito encontradas como loot**, de modo que armarlo *sea* el concepto.
+
+**Ya hecho en `main` desde la demo:**
+- mapa grande (3200×2200, 10 bots, minimapa);
+- niebla irregular, zona que se cierra con tormenta afuera y niebla viva (viento, se disipa y reaparece);
+- `?demo` conserva el mapa chico y fijo.
+
+**Rama aparte, falta PR:** `feat/controles-teclado`, para jugar sin mouse (ver abajo).
+
+### Decisiones tomadas
+- **Piezas:** se agregan en **el orden en que se recogen**. `R` suelta la última pieza en el piso, así que no se pierde.
+- **Progresión:** **loot dentro de cada partida** + una **Ruta de aprendizaje** opcional de 4 rondas.
+- **k del cuántico:** **sale del circuito** (número de marcadores). El clásico sigue con Q/E y `?demo` conserva el k libre.
+- **Alcance:** las 4 partes de abajo, en este orden.
+
+### Parte 1: loot de piezas (núcleo)
+| Pieza | Qué hace | Frecuencia |
+|---|---|---|
+| **H** (superposición) | Reparte la amplitud entre los 8 sectores | 20 % |
+| **M** (marcador / oráculo) | Invierte la fase del sector percibido. **Cuesta 1 consulta de energía**, igual que una consulta clásica | 30 % |
+| **D** (difusor) | Hace interferir las amplitudes | 30 % |
+| **S** (estabilizador) | No cambia el estado. Reduce a la mitad el ruido del circuito y ocupa una ranura | 10 % |
+| **C** (calibrador) | Ver la parte 4 | Rara, después de la 2.ª fase de la zona |
+
+- **Se empieza solo con el cañón clásico.** H, M y D aparecen garantizados cerca del inicio en los primeros 30 s.
+- El circuito tiene hasta 8 ranuras (`[H][M][D][M][D]…`) y el simulador lo ejecuta **tal cual**:
+  - `[H][M]` no cambia nada (falta el difusor);
+  - sin H no hay mejora;
+  - 3 pares bajan el acierto a 33 %.
+- El HUD **no** muestra el % teórico en el modo normal (se arruinaría el descubrimiento); solo en el modo profundización.
+
+### Parte 2: colección de conceptos (logros = objetivos de aprendizaje, sección 5)
+| Logro | Cuándo | Tarjeta |
+|---|---|---|
+| Probabilidad condicional | 5 búsquedas clásicas | `probClasica` |
+| Amplitud negativa | Primer disparo cuántico | `amplitud` |
+| El marcador solo no basta | Disparar con M y sin D | `amplitud` |
+| Interferencia | Acertar con ≥ 1 par | `interferencia` |
+| Sobre-rotación | Fallar con 3 pares tras acertar con 2 | `sobreRotacion` |
+| La tormenta engaña a los dos | 3 búsquedas en tormenta con `misreads` | `ruidoDatos` |
+| Decoherencia | Fallar con 2 pares por ruido, o equipar S | `ruidoCircuito` |
+| Ley de grandes números | 30 búsquedas acumuladas | `pocasPartidas` |
+| Calibración | El calibrador supera el 99 % | `calibracion` (nueva) |
+
+Se guarda en `localStorage`. El inicio muestra "Conceptos 5/9". Sirve como **evidencia de aprendizaje** para el pitch.
+
+### Parte 3: Ruta de aprendizaje (4 rondas de 60–90 s, mapa chico, sin quizzes)
+| Ronda | Qué hay | Objetivo | Tarjeta al final |
+|---|---|---|---|
+| 1. Niebla | Solo el clásico, 3 bots | 5 aciertos de búsqueda | `probClasica` |
+| 2. Amplitudes | H, M y D en el piso, **con M más cerca que D** | 3 aciertos cuánticos | `amplitud` / `interferencia` |
+| 3. Sobre-rotación | Muchas M y D | 5 aciertos cuánticos | `sobreRotacion` |
+| 4. Ruido | Tormenta, ruido del circuito, S disponible | 3 aciertos en tormenta | `ruidoDatos` / `ruidoCircuito` |
+
+En la ronda 2, el jugador **vive** "el marcador solo no cambia nada" antes de que se lo expliquen (pilar 5). Al terminar la ronda 4 se desbloquea el battle royale libre.
+
+### Parte 4: Calibrador, el puente con QML (sección 8.11)
+- Ajusta **una fase φ** compartida por el marcador y el difusor con **descenso de gradiente**, usando la regla de desplazamiento de parámetros. Da un paso por disparo y dibuja la curva de acierto contra el paso de entrenamiento.
+- **Física real:** es la búsqueda exacta con fases ajustadas (Long, 2001). Para N = 8, con 2 iteraciones, φ ≈ 78° da **100 %** (contra 94,5 %). Con 3 iteraciones, φ ≈ 59° **corrige la sobre-rotación** (de 33 % a 100 %). **Validar con Qiskit antes de afirmarlo en el pitch.**
+- El objetivo de entrenamiento es el acierto promedio sobre los 8 sectores: **no filtra dónde está el enemigo**.
+- Cómo decirlo: "entrenar un circuito parametrizado". Nunca "el juego usa IA".
+
+### Contrato v3 (solo agrega)
+```js
+Quantum.runCircuit({ pieces: ['H','M','D',...], target, phaseNoise, sensorFlip, phi })
+  // → { amps, probs, ideal: probs sin ruido, theory: ideal[target], queries: nº de M, misreads }
+Quantum.gradient({ pieces, phi, phaseNoise })  // → { value, dphi }  acierto medio y su derivada
+Quantum.toQiskit(piecesOrK, target, phi)        // acepta el circuito armado
+
+Game.state: circuit, groundPieces, route: { round, objective, progress }, phi, calibCurve
+Game.collection  // logros obtenidos (localStorage)
+Content.pieces = { H, M, D, S, C }          // { nombre, intuitivo, profundo }
+Content.achievements = { id: { titulo, cuando, card } }
+Content.rounds = [{ titulo, objetivo, card }]
+Content.cards.calibracion
+```
+
+### División (independiente; ramas en cadena `feat/loot-piezas` → `feat/coleccion` → `feat/ruta-aprendizaje` → `feat/calibrador`)
+| Persona | Paso 1: núcleo | Paso 2 | Paso 3 |
+|---|---|---|---|
+| **Avix** | `runCircuit`, `toQiskit(pieces)` y tests de configuraciones erróneas | Fase φ, `gradient` y validación con Qiskit de la búsqueda exacta | Slide del calibrador |
+| **Lucas** | Loot (aparición, recogida, `R` para soltar), inventario, costo por M y kit garantizado | Detección de logros y colección | Modo Ruta y paso de entrenamiento del calibrador |
+| **Gandy** | Barra del circuito en el HUD y aviso al recoger | Pantalla de colección y botón "Ruta de aprendizaje" en el inicio | Curva del calibrador; curva observado vs. teoría acumulada; botón táctil para `R` |
+| **Alvaro** | Textos de las 5 piezas | Textos de los 9 logros y la tarjeta `calibracion` | Intro de cada ronda (1 línea, *después* de descubrir), checklist de la sección 7 y pre/post test opcional |
+
+**Riesgos:**
+- Más reglas para el jugador: la ruta las presenta de a una y el inicio sigue con 3 líneas.
+- Balance del loot: todo en `Game.config`.
+- Honestidad: la tarjeta `calibracion` dice qué es real (búsqueda exacta) y qué es simplificación (el ruido es un modelo de un parámetro).
+
+### Controles sin mouse (`feat/controles-teclado`, hecho)
+| Tecla | Acción |
+|---|---|
+| `WASD` | Mover (las flechas **ya no** mueven) |
+| `←` `→` | Girar el cañón (se ve una línea punteada de puntería) |
+| `↑` `↓` | La cámara mira más lejos hacia donde apuntas / vuelve |
+| `F` | Disparo normal |
+| `Espacio`, `1` `2`, `Q` `E` | Igual que antes |
+
+El mouse sigue funcionando: al moverlo, vuelve a mandar la puntería, y al tocar `←` o `→` se vuelve al teclado.
+
+**Textos que hay que actualizar (Gandy):**
+- `js/ui.js`, guía "Cómo jugar", diapositiva "Controles": cambiar `'Mover: WASD o flechas.\n' +` por `'Mover: WASD. Apuntar: mouse, o ← → sin mouse (↑ ↓ mueven la vista).\n' +`, y `'Apuntar: mouse. Disparo normal: clic izquierdo.\n' +` por `'Disparo normal: clic izquierdo o F.\n' +`.
+- `docs/GUIA.md` §3: la tabla de controles con las filas de arriba.
+
 ## Estado al 14:10 y tareas finales (freeze 14:35)
 
 **El juego está completo e integrado en `main`.** Pruebas sobre `origin/main`:
