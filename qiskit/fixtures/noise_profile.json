@@ -1,0 +1,20 @@
+{
+ "backend": "fake_sherbrooke",
+ "shots": 8192,
+ "target": 5,
+ "aer_success_by_k": [
+  0.130615234375,
+  0.59375,
+  0.585693359375,
+  0.222900390625
+ ],
+ "fitted_phase_sigma": 0.46,
+ "model_success_by_k": [
+  0.12499999999999999,
+  0.5896529626087489,
+  0.5979318959107075,
+  0.26121401321031834
+ ],
+ "fit_squared_error": 0.0016660320246175545,
+ "note": "Aproximacion: el ruido real no es solo desfase; sigma se ajusta para parecerse en acierto vs k."
+}
