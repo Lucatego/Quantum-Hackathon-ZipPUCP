@@ -153,8 +153,8 @@
       // Inicio tipo .io: escena a un lado (arriba en celular), título + frase + Jugar grande, el resto plegado.
       '#' + OVERLAY_ID + '.intro{padding-top:calc(46vh + 8px)}' +
       '#' + OVERLAY_ID + '.intro .stage{inset:0 0 auto 0;height:46vh}' +
-      '#' + OVERLAY_ID + '.intro .box{margin:0 auto;max-width:560px}' +
-      '@media (min-width:860px){' +
+      '#' + OVERLAY_ID + '.intro .box{margin:0;max-width:560px}' +
+      '@media (min-width:720px){' +
         '#' + OVERLAY_ID + '.intro{padding:16px 16px 16px 6vw;align-items:center}' +
         '#' + OVERLAY_ID + '.intro .stage{inset:0 0 0 40%;height:auto}' +
         '#' + OVERLAY_ID + '.intro .box{margin:0;max-width:470px}' +
