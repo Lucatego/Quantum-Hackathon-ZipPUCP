@@ -7,6 +7,25 @@
   const SECTOR_ANGLE = (Math.PI * 2) / SECTORS;
   const RECORD_KEY = 'collapse.record';
   const COLLECTION_KEY = 'collapse.coleccion';
+  const ROUTE_KEY = 'collapse.ruta';
+
+  // Ruta de aprendizaje: 4 rondas cortas, un concepto por ronda, sin quizzes. Las piezas se dejan en el
+  // piso en un orden pensado (en la 2, M antes que D: el jugador vive "el marcador solo no basta").
+  // Content.rounds[i] = { titulo, objetivo, card } reemplaza los textos de respaldo.
+  const ROUTE = [
+    { titulo: 'Niebla', objetivo: 'Acierta 5 búsquedas con el cañón clásico',
+      goal: { hits: 5, cannon: 'classic' }, quantum: false, pieces: '', card: 'probClasica' },
+    { titulo: 'Amplitudes', objetivo: 'Arma el cañón cuántico con las piezas del piso y acierta 3 veces',
+      goal: { hits: 3, cannon: 'quantum' }, quantum: true, pieces: 'HMD', card: 'interferencia' },
+    { titulo: 'Sobre-rotación', objetivo: 'Acierta 5 veces con el cuántico: ¿cuántas iteraciones conviene llevar?',
+      goal: { hits: 5, cannon: 'quantum' }, quantum: true, pieces: 'HMDMDMD', card: 'sobreRotacion' },
+    { titulo: 'Ruido', objetivo: 'Acierta 3 veces a enemigos escondidos en la tormenta',
+      goal: { hits: 3, zone: 'tormenta' }, quantum: true, storm: true, pieces: 'HMDMDS', card: 'ruidoDatos' },
+  ];
+  const ROUTE_CONFIG = {
+    world: { w: 2000, h: 1300 }, bots: 3, zoneEnabled: false, fogAlive: false, fogPhaseEvery: 1e9,
+    lootInitial: 0, lootEvery: 1e9, energyRegen: 20, botBulletDamage: 3, botSearchDamage: 3, botSearchCooldown: 6,
+  };
 
   // Colección de conceptos: cada logro es un objetivo de aprendizaje (sección 5 del brief).
   // Nombre de respaldo; Content.achievements[id].titulo lo reemplaza.
@@ -113,6 +132,8 @@
   const Game = {
     config, log: [], history: [], state: null, record: loadRecord(), start,
     collection: loadCollection(), ACHIEVEMENTS: Object.keys(ACHIEVEMENTS),
+    ROUTE_LENGTH: ROUTE.length, routeProgress: loadRouteProgress(),
+    startRoute: (n) => start({ route: n || 1 }),
   };
   window.Game = Game;
 
@@ -222,6 +243,15 @@
     world.newConcepts.push(id);
     const n = Object.keys(c.unlocked).length, total = Object.keys(ACHIEVEMENTS).length;
     hintQueue.push('★ Concepto desbloqueado: ' + achievementTitle(id) + ' (' + n + '/' + total + ')');
+  }
+
+  function loadRouteProgress() {
+    try { return Math.max(0, parseInt(localStorage.getItem(ROUTE_KEY), 10) || 0); } catch (e) { return 0; }
+  }
+
+  function roundInfo(n) {
+    const C = window.Content, c = (C && Array.isArray(C.rounds) && C.rounds[n - 1]) || {}, r = ROUTE[n - 1];
+    return { titulo: c.titulo || r.titulo, objetivo: c.objetivo || r.objetivo, card: c.card || r.card };
   }
 
   function saveRecord(r) {
@@ -423,7 +453,7 @@
     return {
       fog, hazards, pickups, player, bots,
       circuit: [], groundPieces: [], circuitMode: false, nextLootAt: config.lootEvery,
-      newConcepts: [],
+      newConcepts: [], routeHits: 0, routeWon: false,
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null, radarBot: null,
@@ -643,6 +673,19 @@
     if (entry.zone === 'tormenta' && entry.misreads > 0 && ++st.stormMisreads >= 3) unlock('tormentaEngana');
     if (st.searches >= 30) unlock('grandesNumeros');
     saveCollection();
+    if (mode && mode.route) routeProgressOn(entry);
+  }
+
+  function routeProgressOn(entry) {
+    const w = world, g = ROUTE[mode.route - 1].goal;
+    if (w.over || !entry.hit || (g.cannon && entry.cannon !== g.cannon) || (g.zone && entry.zone !== g.zone)) return;
+    w.routeHits++;
+    if (w.routeHits >= g.hits) {
+      w.over = true;
+      w.routeWon = true;
+      w.endT = 1.6;
+      say('¡Ronda ' + mode.route + ' superada!');
+    }
   }
 
   // Un bot busca al jugador escondido en la niebla con el cañón de su arquetipo.
@@ -822,11 +865,15 @@
     const w = world;
     if (!w.over) {
       const botsLeft = w.bots.filter((b) => b.alive).length;
+      if (mode && mode.route) {
+        if (!w.player.alive) { w.over = true; w.endT = 1.6; }
+        return;
+      }
       if (!w.player.alive || botsLeft === 0) {
         w.over = true;
         w.endT = 1.6;
         if (w.player.alive) say('¡Último en pie!');
-        updateRecord();
+        updateRecord();   // (la ruta no llega acá: sus bots reaparecen y no cuentan para el récord)
       }
       return;
     }
@@ -834,8 +881,61 @@
     if (w.endT <= 0) {
       running = false;
       mouse.down = false;
-      if (window.UI && UI.showEnd) UI.showEnd(Game.log, start, Game.history);
+      if (mode && mode.route) return endRound();
+      if (window.UI && UI.showEnd) UI.showEnd(Game.log, () => start(), Game.history);
     }
+  }
+
+  // Fin de una ronda de la ruta: si se superó, se guarda el progreso y se pasa a la siguiente (o al
+  // battle royale tras la última); si no, se repite. UI.showRoundEnd es opcional: sin ella se usa showEnd.
+  function endRound() {
+    const n = mode.route, won = !!world.routeWon, info = roundInfo(n);
+    if (won && n > Game.routeProgress) {
+      Game.routeProgress = n;
+      try { localStorage.setItem(ROUTE_KEY, String(n)); } catch (e) { /* ignorar */ }
+    }
+    const next = won ? (n < ROUTE.length ? () => start({ route: n + 1 }) : () => start()) : () => start({ route: n });
+    const UIm = window.UI;
+    if (UIm && UIm.showRoundEnd) {
+      UIm.showRoundEnd({ round: n, total: ROUTE.length, titulo: info.titulo, card: info.card, passed: won, log: Game.log }, next);
+    } else if (UIm && UIm.showEnd) {
+      UIm.showEnd(Game.log, next, Game.history);
+    }
+  }
+
+  // En la ruta los bots que caen reaparecen escondidos en la niebla de la ronda, para poder practicar.
+  function updateRoute() {
+    const w = world;
+    if (!mode || !mode.route || w.over) return;
+    for (const b of w.bots) {
+      if (b.alive) continue;
+      if (!b.respawnAt) { b.respawnAt = w.time + 2.5; continue; }
+      if (w.time < b.respawnAt) continue;
+      const q = routeHidingSpot();
+      Object.assign(b, { x: q.x, y: q.y, hp: 100, alive: true, wait: 999, wp: null, revealed: 0, respawnAt: 0 });
+    }
+  }
+
+  function routeBank() {
+    return ROUTE[mode.route - 1].storm ? world.fog.find((f) => f.storm) || world.fog[0] : world.fog[0];
+  }
+
+  function routeHidingSpot() {
+    const f = routeBank(), c = f.blobs[Math.floor(Math.random() * f.blobs.length)];
+    const a = rand(0, Math.PI * 2), r = rand(0, c.r * 0.5);
+    return { x: f.x + c.dx + Math.cos(a) * r, y: f.y + c.dy + Math.sin(a) * r };
+  }
+
+  // Prepara la ronda: el jugador junto a la niebla de la ronda, los bots escondidos adentro y las piezas
+  // en fila, alejándose de la niebla hacia el centro del mapa (se recogen en el orden pensado).
+  function setupRound() {
+    const w = world, r = ROUTE[mode.route - 1], f = routeBank(), p = w.player, W = config.world.w;
+    const dir = f.x < W / 2 ? 1 : -1;
+    p.x = clamp(f.x + dir * (f.r + 80), 40, W - 40);
+    p.y = clamp(f.y, 40, config.world.h - 40);
+    w.bots.forEach((b) => { const q = routeHidingSpot(); Object.assign(b, { x: q.x, y: q.y, wait: 999, wp: null, fireCd: 3 }); });
+    w.groundPieces = r.pieces.split('').map((t, i) => makePiece(t, clamp(p.x + dir * (110 + i * 75), 40, W - 40), p.y + (i % 2 ? 22 : -22)));
+    if (!r.quantum) w.cannon = 'classic';
   }
 
   function updateFog(dt) {
@@ -936,6 +1036,7 @@
     w.energy = Math.min(config.energyMax, w.energy + config.energyRegen * dt);
     updatePlayer(dt);
     updateLoot();
+    updateRoute();
     updateFog(dt);
     updateZone(dt);
     updateBots(dt);
@@ -1307,6 +1408,16 @@
       if (z.r > z.rTarget) ctx.fillText('La zona se está cerrando…', v.w - 16, 78);
       else if (z.rTarget > config.zoneMinR) ctx.fillText('La zona se cierra en ' + Math.ceil(z.nextAt - world.time) + ' s', v.w - 16, 78);
     }
+    if (mode && mode.route) {
+      const info = roundInfo(mode.route), g = ROUTE[mode.route - 1].goal;
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd166';
+      const line = 'Ruta ' + mode.route + '/' + ROUTE.length + ' · ' + info.titulo + ': ' + info.objetivo + ' (' + Math.min(world.routeHits, g.hits) + '/' + g.hits + ')';
+      wrapText(line, v.w - 280).forEach((l, i) => ctx.fillText(l, v.w / 2, 30 + i * 18));
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+    }
     if (world.player.alive && outsideSafe(world.player)) {
       ctx.font = 'bold 15px system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -1385,7 +1496,10 @@
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       if (!running || !world || e.repeat) return;
       if (e.code === 'Digit1') world.cannon = 'classic';
-      if (e.code === 'Digit2') world.cannon = 'quantum';
+      if (e.code === 'Digit2') {
+        if (mode && mode.route && !ROUTE[mode.route - 1].quantum) say('El cañón cuántico se desbloquea en la ronda 2');
+        else world.cannon = 'quantum';
+      }
       if (e.code === 'KeyZ') world.player.activeBulletType = 0;
       if (e.code === 'KeyX') world.player.activeBulletType = 1;
       if ((e.code === 'KeyQ' || e.code === 'KeyE') && world.cannon === 'quantum' && world.circuitMode) {
@@ -1427,10 +1541,31 @@
     return typeof location !== 'undefined' && /[?&]demo\b/.test(location.search);
   }
 
+  // La demo y la ruta cambian la configuración solo mientras duran: se guarda una copia y se restaura al
+  // volver al battle royale (así los ajustes hechos desde la consola no se pierden).
+  let savedConfig = null;
+  function applyOverrides(over) {
+    if (!savedConfig) savedConfig = JSON.parse(JSON.stringify(config));
+    Object.assign(config, JSON.parse(JSON.stringify(over)));
+  }
+  function restoreConfig() {
+    if (savedConfig) { Object.assign(config, savedConfig); savedConfig = null; }
+  }
+
   // Se aplica antes de crear el mundo: la demo usa el mapa chico (ya probado) para que sea predecible.
   function demoConfig() {
-    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, fogAlive: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+    applyOverrides({ world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, fogAlive: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
   }
+
+  // ?ruta o ?ruta=N en la URL arranca la Ruta de aprendizaje (solo en el primer inicio).
+  function routeFromUrl() {
+    if (typeof location === 'undefined') return null;
+    const m = /[?&]ruta(?:=(\d+))?(?:&|$)/.exec(location.search);
+    return m ? { route: clamp(parseInt(m[1], 10) || 1, 1, ROUTE.length) } : null;
+  }
+
+  let mode = null;          // null = battle royale; { route: n } = ronda n de la ruta
+  let firstStart = true;
 
   function setupDemo() {
     const f = world.fog[0], p = world.player, b = world.bots[0];
@@ -1438,18 +1573,23 @@
     b.x = f.x; b.y = f.y; b.wait = 25; b.fireCd = 5;
   }
 
-  function start() {
+  function start(m) {
+    mode = m && m.route ? { route: clamp(m.route, 1, ROUTE.length) } : (firstStart ? routeFromUrl() : null);
+    firstStart = false;
     canvas = document.getElementById('game');
     const cal = window.Quantum && window.Quantum.CALIBRATED_PHASE_NOISE;
     if (typeof cal === 'number') config.phaseNoise = +(cal * config.phaseNoiseScale).toFixed(3);
     ctx = canvas.getContext('2d');
     if (!inputBound) bindInput();
     resize();
-    if (isDemo()) demoConfig();
+    restoreConfig();
+    if (mode) applyOverrides(ROUTE_CONFIG);
+    else if (isDemo()) demoConfig();
     world = newWorld();
-    if (isDemo()) setupDemo();
     world.circuitMode = circuitModeAvailable();
-    if (world.circuitMode) {
+    if (mode) setupRound();
+    else if (isDemo()) setupDemo();
+    if (world.circuitMode && !mode) {
       giveStarterKit();
       for (let i = 0; i < config.lootInitial; i++) { const q = lootPoint(); world.groundPieces.push(makePiece(randomPieceType(), q.x, q.y)); }
     }
