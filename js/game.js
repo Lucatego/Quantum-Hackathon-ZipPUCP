@@ -12,7 +12,8 @@
     playerSpeed: 230,
     botSpeed: 110,
     bulletSpeed: 620,
-    bulletDamage: 20,
+    bulletDamage: 12,
+    bulletHeal: 8,
     searchDamage: 60,
     botBulletDamage: 6,
     fireCooldown: 0.25,
@@ -24,6 +25,8 @@
     costPerQuery: 20,      // igual para una consulta clásica que para una iteración cuántica
     slowmoDuration: 1.1,   // segundos reales que se muestran las barras antes del tiro
     slowmoScale: 0.12,
+    pickupRadius: 16,
+    hazardRadius: 44,
     phaseNoise: 0,         // ruido del circuito (solo cuántico)
     sensorFlip: 0,         // ruido del sensor (afecta a ambos)
   };
@@ -63,10 +66,19 @@
   // ---------- mundo ----------
   function makeTank(x, y, isPlayer) {
     return {
-      x, y, r: 18, hp: 100, angle: 0, isPlayer, alive: true,
+      x, y, r: 18, hp: 100, maxHp: 100, angle: 0, isPlayer, alive: true,
       fireCd: rand(0, 1), wp: null, wait: 0, revealed: 0, flash: 0,
+      activeBulletType: 1, bulletType: 1,
       color: isPlayer ? '#4fc3f7' : '#ff7a59',
     };
+  }
+
+  function makePickup(x, y, type) {
+    return { x, y, type, radius: config.pickupRadius, pulse: rand(0, Math.PI * 2), active: true };
+  }
+
+  function makeHazard(x, y, radius) {
+    return { x, y, radius: radius || config.hazardRadius, kind: 'H', pulse: rand(0, Math.PI * 2), active: true };
   }
 
   function randomPoint(minDistFrom, minDist) {
@@ -92,6 +104,16 @@
       { x: W * 0.52, y: H * 0.16, r: 160 },
       { x: W * 0.18, y: H * 0.8, r: 150 },
     ];
+    const hazards = [
+      makeHazard(W * 0.5, H * 0.55, 64),
+      makeHazard(W * 0.22, H * 0.33, 54),
+      makeHazard(W * 0.8, H * 0.72, 58),
+    ];
+    const pickups = [
+      makePickup(W * 0.32, H * 0.58, 0),
+      makePickup(W * 0.68, H * 0.42, 1),
+      makePickup(W * 0.5, H * 0.2, 0),
+    ];
     const player = makeTank(W / 2, H * 0.82, true);
     const bots = [];
     for (let i = 0; i < config.bots; i++) {
@@ -99,7 +121,7 @@
       bots.push(makeTank(p.x, p.y, false));
     }
     return {
-      fog, player, bots,
+      fog, hazards, pickups, player, bots,
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null,
@@ -112,14 +134,72 @@
     return [world.player].concat(world.bots);
   }
 
-  // ---------- combate ----------
-  function fire(owner, angle, dmg) {
+  function healTarget(target, amount) {
+    if (!target || !target.alive) return;
+    if (typeof target.maxHp === 'number') {
+      target.hp = Math.min(target.maxHp, target.hp + amount);
+    } else {
+      target.hp += amount;
+    }
+  }
+
+  function applyBulletHit(target, bullet) {
+    if (!target || !target.alive) return;
+    if (bullet.superposed) {
+      if (bullet.outcome === 'heal') {
+        healTarget(target, Math.round((bullet.heal || config.bulletHeal) * 1.2));
+        burst(target.x, target.y, '#7ef7c7', 8);
+      } else {
+        damage(target, Math.round((bullet.dmg || config.bulletDamage) * 1.1));
+        burst(target.x, target.y, '#ff8c7b', 10);
+      }
+      return;
+    }
+    if (bullet.type === 0) {
+      healTarget(target, bullet.heal || config.bulletHeal);
+      burst(target.x, target.y, '#7ef7c7', 8);
+    } else {
+      damage(target, bullet.dmg || config.bulletDamage);
+      burst(target.x, target.y, '#ff8c7b', 10);
+    }
+  }
+
+  function findHazardAt(x, y) {
+    return world.hazards.find((h) => h.active && Math.hypot(h.x - x, h.y - y) <= h.radius);
+  }
+
+  function transformBulletInHazard(bullet) {
+    if (!bullet || bullet.life <= 0) return;
+    const hazard = findHazardAt(bullet.x, bullet.y);
+    if (!hazard) {
+      bullet.inHazardH = false;
+      return;
+    }
+
+    if (bullet.inHazardH && bullet.superposed) return;
+
+    bullet.inHazardH = true;
+    bullet.superposed = true;
+    const typeBias = bullet.type === 0 ? 0.68 : 0.42;
+    const roll = Math.random();
+    bullet.outcome = roll < typeBias ? 'heal' : 'damage';
+    if (bullet.type === 1 && roll < 0.26) bullet.outcome = 'heal';
+    if (bullet.type === 0 && roll > 0.88) bullet.outcome = 'damage';
+    bullet.heal = bullet.heal || config.bulletHeal;
+    bullet.dmg = bullet.dmg || config.bulletDamage;
+    burst(bullet.x, bullet.y, bullet.outcome === 'heal' ? '#7ef7c7' : '#ff8c7b', 6);
+  }
+
+  function fire(owner, angle, dmg, bulletType) {
+    const type = typeof bulletType === 'number' ? bulletType : 1;
     world.bullets.push({
       x: owner.x + Math.cos(angle) * (owner.r + 6),
       y: owner.y + Math.sin(angle) * (owner.r + 6),
       vx: Math.cos(angle) * config.bulletSpeed,
       vy: Math.sin(angle) * config.bulletSpeed,
-      owner, dmg, life: 1.3,
+      owner, dmg: dmg || config.bulletDamage, type,
+      life: 1.3, superposed: false, inHazardH: false,
+      outcome: null, heal: config.bulletHeal,
     });
   }
 
@@ -205,11 +285,21 @@
     p.x = clamp(p.x + (mx / len) * config.playerSpeed * dt, p.r, config.world.w - p.r);
     p.y = clamp(p.y + (my / len) * config.playerSpeed * dt, p.r, config.world.h - p.r);
 
+    for (const pickup of world.pickups) {
+      if (!pickup.active) continue;
+      if (Math.hypot(p.x - pickup.x, p.y - pickup.y) <= p.r + pickup.radius) {
+        pickup.active = false;
+        p.activeBulletType = pickup.type;
+        p.bulletType = pickup.type;
+        say('Balas ' + pickup.type + ' recogidas');
+      }
+    }
+
     const m = screenToWorld(mouse.x, mouse.y);
     p.angle = Math.atan2(m.y - p.y, m.x - p.x);
     p.fireCd -= dt;
     if (mouse.down && p.fireCd <= 0 && !world.search) {
-      fire(p, p.angle, config.bulletDamage);
+      fire(p, p.angle, config.bulletDamage, p.activeBulletType);
       p.fireCd = config.fireCooldown;
     }
   }
@@ -271,12 +361,15 @@
       u.x += u.vx * dt;
       u.y += u.vy * dt;
       u.life -= dt;
+      transformBulletInHazard(u);
+
       for (const t of list) {
         if (t === u.owner || !t.alive) continue;
         if (Math.hypot(u.x - t.x, u.y - t.y) < t.r + 4) {
-          damage(t, u.dmg);
+          applyBulletHit(t, u);
           if (!t.isPlayer) t.revealed = Math.max(t.revealed, 0.4);
-          burst(u.x, u.y, '#ffffff', 4);
+          if (u.type === 0 && t.isPlayer) say('Pieza 0: energía restaurada');
+          if (u.type === 1 && t.isPlayer) say('Pieza 1: daño recibido');
           return false;
         }
       }
@@ -388,10 +481,40 @@
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, W, H);
 
+    for (const hazard of world.hazards) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(127, 205, 255, 0.14)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(127, 205, 255, 0.7)';
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#d8f3ff';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('H', hazard.x, hazard.y + 6);
+      ctx.restore();
+    }
+
+    for (const pickup of world.pickups) {
+      if (!pickup.active) continue;
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.radius, 0, Math.PI * 2);
+      ctx.fillStyle = pickup.type === 0 ? 'rgba(75, 255, 150, 0.7)' : 'rgba(255, 120, 120, 0.8)';
+      ctx.fill();
+      ctx.fillStyle = '#0b1020';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(pickup.type), pickup.x, pickup.y + 5);
+    }
+
     for (const u of world.bullets) {
       ctx.beginPath();
       ctx.arc(u.x, u.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = u.owner.isPlayer ? '#9be7ff' : '#ffb199';
+      ctx.fillStyle = u.type === 0 ? '#7ef7c7' : (u.superposed ? '#d39bff' : '#ff8c7b');
       ctx.fill();
     }
 
@@ -465,6 +588,8 @@
       cost: w.k * config.costPerQuery,
       costPerQuery: config.costPerQuery,
       searching: !!w.search,
+      activeBulletType: w.player.activeBulletType,
+      inHazardH: !!findHazardAt(w.player.x, w.player.y),
     };
   }
 
@@ -517,6 +642,8 @@
       if (!running || !world || e.repeat) return;
       if (e.code === 'Digit1') world.cannon = 'classic';
       if (e.code === 'Digit2') world.cannon = 'quantum';
+      if (e.code === 'KeyZ') world.player.activeBulletType = 0;
+      if (e.code === 'KeyX') world.player.activeBulletType = 1;
       if (e.code === 'KeyQ') world.k = Math.max(0, world.k - 1);
       if (e.code === 'KeyE') world.k = Math.min(3, world.k + 1);
       if (e.code === 'Space') trySearch();
