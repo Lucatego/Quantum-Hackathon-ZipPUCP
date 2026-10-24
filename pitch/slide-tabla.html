@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide: tabla 8.4 y ruido IBM</title>
+<style>
+  :root { --bg:#0e1220; --fg:#e8ecf4; --mut:#9aa6c4; --grid:#2a3350; --cl:#f5b942; --q:#4da3ff; --n:#ff6b9d; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
+  .slide { max-width:1100px; margin:0 auto; padding:24px 20px 32px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 18px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media (max-width:800px){ .cols{ grid-template-columns:1fr; } }
+  table { border-collapse:collapse; width:100%; }
+  th, td { border-bottom:1px solid var(--grid); padding:8px 10px; text-align:right; }
+  th:first-child, td:first-child { text-align:center; }
+  th { color:var(--mut); font-weight:600; font-size:13px; }
+  .cl { color:var(--cl); } .q { color:var(--q); } .n { color:var(--n); }
+  .hl td { background:#161c30; }
+  svg { width:100%; height:auto; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; margin-top:6px; }
+  .legend span::before { content:""; display:inline-block; width:12px; height:3px; margin-right:6px; vertical-align:middle; background:currentColor; }
+  .note { color:var(--mut); font-size:13px; margin-top:16px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="slide">
+  <h1>Mismo problema, mismo presupuesto: ¿quién acierta más?</h1>
+  <p class="sub">Búsqueda del enemigo en 8 sectores (3 qubits). Probabilidad de acertar con k consultas / iteraciones.</p>
+
+  <div class="cols">
+    <div>
+      <table>
+        <tr><th>k</th><th class="cl">Clásico<br>(k+1)/8</th><th class="q">Cuántico<br>sin²((2k+1)θ)</th><th class="n">Cuántico con<br>ruido IBM*</th></tr>
+        <tr><td>0</td><td>12,5 %</td><td>12,5 %</td><td>13,1 %</td></tr>
+        <tr><td>1</td><td>25,0 %</td><td>78,1 %</td><td>59,4 %</td></tr>
+        <tr class="hl"><td>2</td><td>37,5 %</td><td>94,5 %</td><td>58,6 %</td></tr>
+        <tr><td>3</td><td>50,0 %</td><td>33,0 %</td><td>22,3 %</td></tr>
+      </table>
+    </div>
+    <div>
+      <svg id="chart" viewBox="0 0 460 300" role="img" aria-label="Acierto frente a k para clásico, cuántico ideal y cuántico con ruido"></svg>
+      <div class="legend"><span class="cl">Clásico</span><span class="q">Cuántico ideal</span><span class="n">Cuántico con ruido IBM*</span></div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Cómo leerlo.</b> Sin ruido, 2 iteraciones llegan a ~95 % y con 3 el acierto cae: te pasaste (sobre-rotación). Con el ruido del circuito, el máximo baja a ~59 % y k=1 y k=2 casi empatan, pero el cuántico sigue por encima del clásico para k=1 y k=2 (con k=3 queda por debajo).<br>
+    <b>Verificación.</b> Columnas 2 y 3: simulador del juego contra Qiskit <code>Statevector</code>, error ≈ 1e-15.<br>
+    *<b>Límite:</b> el desfase es un modelo de un solo parámetro (σ = 0,46), ajustado al perfil de ruido de un procesador IBM simulado (FakeSherbrooke en Qiskit Aer, 8192 disparos por k). No es una medición en hardware real. La ventaja cuadrática en consultas es real para la búsqueda no estructurada idealizada; con 8 sectores esto es un ejemplo pedagógico, no una demostración de ventaja práctica.
+  </p>
+</div>
+
+<script>
+  // Datos: qiskit/fixtures/noise_profile.json (Aer) y tabla 8.4 (Statevector).
+  var ks = [0, 1, 2, 3];
+  var series = [
+    { c: 'var(--cl)', d: [12.5, 25, 37.5, 50] },
+    { c: 'var(--q)',  d: [12.5, 78.125, 94.53125, 33.0078125] },
+    { c: 'var(--n)',  d: [13.1, 59.4, 58.6, 22.3] }
+  ];
+  var W = 460, H = 300, L = 44, R = 16, T = 14, B = 36;
+  function x(k) { return L + (W - L - R) * k / 3; }
+  function y(p) { return T + (H - T - B) * (1 - p / 100); }
+  var s = '';
+  [0, 25, 50, 75, 100].forEach(function (p) {
+    s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(p) + '" y2="' + y(p) + '" stroke="var(--grid)"/>' +
+         '<text x="' + (L - 6) + '" y="' + (y(p) + 4) + '" text-anchor="end" font-size="11" fill="var(--mut)">' + p + ' %</text>';
+  });
+  ks.forEach(function (k) {
+    s += '<text x="' + x(k) + '" y="' + (H - 14) + '" text-anchor="middle" font-size="11" fill="var(--mut)">k = ' + k + '</text>';
+  });
+  series.forEach(function (se) {
+    s += '<polyline fill="none" stroke="' + se.c + '" stroke-width="2.5" points="' +
+         se.d.map(function (p, i) { return x(i) + ',' + y(p); }).join(' ') + '"/>';
+    se.d.forEach(function (p, i) { s += '<circle cx="' + x(i) + '" cy="' + y(p) + '" r="3.5" fill="' + se.c + '"/>'; });
+  });
+  document.getElementById('chart').innerHTML = s;
+</script>
+</body>
+</html>
