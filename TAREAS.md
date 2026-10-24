@@ -3,7 +3,8 @@
 > Quedan **2 horas** para la entrega. Lo que se evalúa es un **prototipo funcional y una buena idea/pitch**, no el sistema completo.
 > Brief completo: [`INDICACIONES.md`](INDICACIONES.md).
 >
-> **Actualización 13:45:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
+> **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
+> Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
 
 ## Estado al 13:45
 
@@ -19,6 +20,7 @@
 | `js/content.js` | Alvaro | **Falta.** Sin él, la pantalla final no muestra tarjeta educativa |
 | Slides y guion | Alvaro | **Falta.** `pitch/` tiene una sola línea |
 | Ruido en la partida | Lucas | **Falta.** El simulador lo soporta, pero el juego lo tiene en 0 |
+| `docs/GUIA.md` (guía para jugar e integrar) | Gandy | Lista en `feat/ui`, **falta el PR a `main`**. Describe el contrato v1; hay que actualizarla con el v2 al cierre |
 | Textos con error conceptual | Avix | **Corregir.** El comentario de `toQiskit` dice que el sector "debería dominar", y no es así con k=0 ni con k=3 |
 
 ---
@@ -96,6 +98,10 @@ Si `Content.hints[clave]` no existe, la pista no se muestra.
    - **acumulado de la sesión** con `history` (varias partidas), junto a la frase "con más disparos, lo observado se acerca a la teoría";
    - destacar **"tu mejor k cuántico"**.
 4. Probar en el celular con el QR (overlays y legibilidad).
+5. **`docs/GUIA.md`:**
+   - abrir ya el PR de `feat/ui` a `main` para que todos tengan la guía;
+   - al cierre, actualizarla con el contrato v2 (`misreads`, `zone`, `history`, `Content.hints`), la tormenta y el ruido activo, y la tabla de `Game.config` (`stormSensorFlip`, `phaseNoise` ≠ 0);
+   - revisar la frase de la §7 (ver "Observaciones" más abajo).
 
 **Hecho cuando:** `test/ui.html` muestra la leyenda, el modo profundización y la pantalla final v2 con un log falso que incluye `zone`/`misreads`.
 
@@ -109,7 +115,7 @@ Si `Content.hints[clave]` no existe, la pista no se muestra.
      4. hubo aciertos cuánticos → `interferencia`;
      5. solo se usó el clásico → `probClasica`;
      6. menos de 10 disparos → `pocasPartidas`.
-2. **Revisar con el checklist de la sección 7** todos los textos que ve el jugador: `say(...)` en `game.js`, `DEFAULT_START` en `ui.js` y los comentarios de `toQiskit`. Los problemas se le **avisan al dueño del archivo**, no se editan.
+2. **Revisar con el checklist de la sección 7** todos los textos que ve el jugador o el jurado: `say(...)` en `game.js`, `DEFAULT_START` en `ui.js`, los comentarios de `toQiskit` y `docs/GUIA.md` (sobre todo las §6 y §7). Los problemas se le **avisan al dueño del archivo**, no se editan.
 3. **Slides** (orden de la fase 1) + guion de la demo de 60–90 s + preguntas del jurado. Usar la frase de calibración de Avix tal cual (es un ajuste efectivo, no "ruido real de IBM").
 4. **Evidencia de aprendizaje:**
    - formulario pre/post de 4 preguntas (sección 12);
@@ -117,6 +123,11 @@ Si `Content.hints[clave]` no existe, la pista no se muestra.
    - poner el resultado en una slide, aunque sea pequeño y diciendo que es preliminar.
 
 **Hecho cuando:** `node test/check-contract.js` ya no marca `content.js` como pendiente y las slides están completas.
+
+### Observaciones para revisar (13:50)
+1. **`docs/GUIA.md` §7** dice que el clásico es "el mismo problema, no el mejor algoritmo posible". En búsqueda no estructurada, consultar sector por sector **sí es la estrategia clásica óptima** (ningún método clásico supera (k+1)/8 con k consultas). Y la ventaja cuadrática de Grover en número de consultas está demostrada para este problema idealizado (sección 3 del brief). Tal como está, la frase debilita el argumento de "comparación justa". Propuesta: *"El clásico usa la mejor estrategia clásica posible para este problema. La ventaja de Grover es real en número de consultas, pero solo en búsqueda no estructurada idealizada; con 8 sectores es un ejemplo pedagógico, no una demostración de ventaja práctica."* Que lo revise Alvaro con Gandy.
+2. **`feat/ui` está detrás de `main`** (le falta el commit de `TAREAS.md`). No es un problema: el PR solo agrega `docs/GUIA.md` y no borra nada de `TAREAS.md`, aunque el diff contra `main` lo haga parecer.
+3. Todavía nadie creó las ramas `-v2`. Si alguna tarea no va a entrar antes del freeze, recórtenla y avisen.
 
 ### Cierre (14:35 → 15:00)
 1. **14:35:** freeze de código; PRs de las 4 ramas `-v2` a `main`.
