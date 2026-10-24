@@ -181,16 +181,7 @@
       '#' + OVERLAY_ID + ' .card{background:rgba(232,236,244,.07);border-left:4px solid ' + COLOR.prob + ';border-radius:8px;padding:4px 14px 12px}' +
       '#' + OVERLAY_ID + ' .panel{background:rgba(232,236,244,.04);border:1px solid ' + COLOR.guide + ';border-radius:10px;padding:10px 12px;margin-top:14px}' +
       '#' + OVERLAY_ID + ' summary{cursor:pointer;color:' + COLOR.prob + ';min-height:44px;display:flex;align-items:center}' +
-      '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}' +
-      '@media (max-width: 420px){' +
-      '  #' + OVERLAY_ID + '{padding:12px 10px;}' +
-      '  #' + OVERLAY_ID + ' .box{max-width:100%}' +
-      '  #' + OVERLAY_ID + ' h1{font-size:20px}' +
-      '  #' + OVERLAY_ID + ' p, li, summary, pre, td, th{font-size:13px}' +
-      '  #' + OVERLAY_ID + ' button{width:100%;margin-right:0}' +
-      '  #' + OVERLAY_ID + ' table{font-size:12px}' +
-      '  #' + OVERLAY_ID + ' .panel, #' + OVERLAY_ID + ' .card{padding:8px 10px}' +
-      '}' ;
+      '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}';
     document.head.appendChild(s);
   }
 
@@ -250,6 +241,120 @@
     var good = renderMessagePanel('Qué sí queremos promover', truths);
     if (good) o.box.appendChild(good);
     o.box.appendChild(onceButton('Jugar', o, onPlay));
+    var how = el('button', 'Cómo jugar', 'alt');
+    how.type = 'button';
+    how.addEventListener('click', function () { showGuide(function () { showStart(onPlay); }); });
+    o.box.appendChild(how);
+  }
+
+  // ---- Guía "Cómo jugar" (plan-guia-en-juego, fase 1) ----
+  // Una idea por diapositiva. Content.guide = [{ titulo, texto }] la sobrescribe; '\n' separa párrafos.
+  var DEFAULT_GUIDE = [
+    { titulo: 'El reto', texto:
+      'Hay un enemigo escondido en la niebla.\n' +
+      'El radar te avisa de que está cerca, pero no en cuál de los 8 sectores que rodean tu tanque.\n' +
+      'Disparar a ciegas acierta 1 de cada 8 veces (12,5 %).' },
+    { titulo: 'Controles', texto:
+      'Mover: WASD o flechas.\n' +
+      'Apuntar: mouse. Disparo normal: clic izquierdo.\n' +
+      'Buscar en la niebla: Espacio o clic derecho (solo con el radar encendido).\n' +
+      'Cañón clásico o cuántico: teclas 1 y 2.\n' +
+      'Bajar o subir k: Q y E (de 0 a 3).' },
+    { titulo: 'Dos cañones, misma energía', texto:
+      'Cada consulta o iteración cuesta la misma energía, y los dos cañones usan el mismo sensor.\n' +
+      'El clásico revisa un sector por consulta y descarta los que no son.\n' +
+      'El cuántico reparte amplitudes y las hace interferir para reforzar el sector correcto.' },
+    { titulo: 'Cómo leer las barras', demo: true, texto:
+      'Clásico: barras de probabilidad; los sectores descartados se ven en gris.\n' +
+      'Cuántico: la cuña de color es la amplitud (cian positiva, rosa negativa) y el cono amarillo es la probabilidad, la amplitud al cuadrado.\n' +
+      'El disparo sale hacia un sector elegido al azar según las probabilidades. (Ejemplo ilustrativo.)' },
+    { titulo: 'La trampa de pasarse', texto:
+      'Con 8 sectores y sin ruido, el acierto cuántico teórico es 12,5 % con k = 0, 78,1 % con k = 1, 94,5 % con k = 2 y 33,0 % con k = 3.\n' +
+      'El clásico con k consultas acierta (k+1)/8: 12,5, 25, 37,5 y 50 %.\n' +
+      'Más iteraciones no siempre ayudan: con k = 3 el acierto cae.' },
+    { titulo: 'Una partida no demuestra nada', texto:
+      'Al final verás los aciertos observados frente a la teoría. Con pocos disparos pueden alejarse mucho: es variación normal.\n' +
+      'Es una simulación didáctica de 3 qubits: no es hardware cuántico ni una ventaja cuántica real.' }
+  ];
+
+  function guideSlides() {
+    var g = window.Content && window.Content.guide;
+    if (!Array.isArray(g)) return DEFAULT_GUIDE;
+    var ok = g.filter(function (s) { return s && typeof s.titulo === 'string' && typeof s.texto === 'string'; });
+    return ok.length ? ok : DEFAULT_GUIDE;
+  }
+
+  // Ejemplo vivo: el mismo drawSectors del juego, con las amplitudes del contrato (k = 2, sector 3).
+  function demoCanvas(label, result, cannon) {
+    var wrap = el('div', undefined, 'demo'), c = document.createElement('canvas');
+    var size = 220, dpr = window.devicePixelRatio || 1;
+    c.width = size * dpr; c.height = size * dpr; c.style.width = size + 'px'; c.style.height = size + 'px';
+    var ctx = c.getContext && c.getContext('2d');
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = COLOR.text; ctx.beginPath(); ctx.arc(size / 2, size / 2, 8, 0, Math.PI * 2); ctx.fill();
+      drawSectors(ctx, size / 2, size / 2, result, cannon);
+    }
+    wrap.appendChild(c);
+    wrap.appendChild(el('div', label));
+    return wrap;
+  }
+  function demoResults() {
+    var amps = [], probs = [];
+    for (var i = 0; i < 8; i++) { var re = i === 3 ? 0.972 : -0.088; amps.push({ re: re, im: 0 }); probs.push(re * re); }
+    return {
+      quantum: { amps: amps, probs: probs, theory: 0.945 },
+      classic: { probs: [0, 0, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6], discarded: [0, 1], found: false, theory: 0.375 }
+    };
+  }
+
+  function showGuide(onClose) {
+    var slides = guideSlides(), idx = 0, closed = false;
+    var o = openOverlay();
+    function finish() {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey);
+      o.close();
+      if (typeof onClose === 'function') onClose();
+    }
+    function onKey(e) {
+      if (!o.box.isConnected) { document.removeEventListener('keydown', onKey); return; }   // otro overlay lo reemplazó
+      if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'Escape') finish();
+    }
+    function go(d) {
+      if (closed) return;
+      if (d > 0 && idx === slides.length - 1) return finish();
+      idx = Math.max(0, Math.min(slides.length - 1, idx + d));
+      render();
+    }
+    function render() {
+      var s = slides[idx];
+      o.box.textContent = '';
+      o.box.appendChild(el('h1', 'CÓMO JUGAR'));
+      o.box.appendChild(el('p', (idx + 1) + ' / ' + slides.length, 'step'));
+      o.box.appendChild(el('h2', s.titulo));
+      String(s.texto).split('\n').forEach(function (l) { if (l.trim()) o.box.appendChild(el('p', l)); });
+      if (s.demo) {
+        var d = demoResults(), row = el('div', undefined, 'demos');
+        row.appendChild(demoCanvas('Clásico: 2 sectores descartados', d.classic, 'classic'));
+        row.appendChild(demoCanvas('Cuántico: k = 2, sector marcado: 3', d.quantum, 'quantum'));
+        o.box.appendChild(row);
+      }
+      var nav = el('div', undefined, 'nav');
+      var prev = el('button', 'Anterior', 'alt'); prev.type = 'button'; prev.disabled = idx === 0;
+      prev.addEventListener('click', function () { go(-1); });
+      var next = el('button', idx === slides.length - 1 ? 'Listo' : 'Siguiente'); next.type = 'button';
+      next.addEventListener('click', function () { go(1); });
+      var skip = el('button', 'Saltar', 'alt'); skip.type = 'button';
+      skip.addEventListener('click', finish);
+      nav.appendChild(prev); nav.appendChild(next); nav.appendChild(skip);
+      o.box.appendChild(nav);
+    }
+    document.addEventListener('keydown', onKey);
+    render();
   }
 
   // Agrupa el log por cañón × k: disparos, aciertos y teoría (promedio de log.theory).
@@ -338,5 +443,5 @@
     o.box.appendChild(onceButton('Jugar otra vez', o, onReplay));
   }
 
-  window.UI = { drawHUD: drawHUD, drawSectors: drawSectors, showStart: showStart, showEnd: showEnd };
+  window.UI = { drawHUD: drawHUD, drawSectors: drawSectors, showStart: showStart, showEnd: showEnd, showGuide: showGuide };
 })();

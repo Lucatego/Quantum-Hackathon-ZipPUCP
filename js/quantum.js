@@ -82,16 +82,19 @@
   function runQuantum(opts) {
     var k = opts.k, target = opts.target;
     var phaseNoise = opts.phaseNoise || 0, sensorFlip = opts.sensorFlip || 0;
-    var a = dephase(hadamard(newState()), phaseNoise);
+    var a = dephase(hadamard(newState()), phaseNoise), misreads = 0;
     for (var it = 0; it < k; it++) {
       // cada iteración consulta el sensor una vez: marca el sector percibido
-      a = dephase(oracle(a, perceive(target, sensorFlip)), phaseNoise);
+      var seen = perceive(target, sensorFlip);
+      if (seen !== target) misreads++;
+      a = dephase(oracle(a, seen), phaseNoise);
       a = dephase(diffuser(a), phaseNoise);
     }
     return {
       amps: a,
       probs: probsOf(a),
-      theory: Math.pow(Math.sin((2 * k + 1) * THETA), 2)
+      theory: Math.pow(Math.sin((2 * k + 1) * THETA), 2),
+      misreads: misreads // consultas en las que el sensor percibió un sector equivocado
     };
   }
 
@@ -104,10 +107,11 @@
     for (i = 0; i < N; i++) order.push(i);
     for (i = N - 1; i > 0; i--) { j = randInt(i + 1); t = order[i]; order[i] = order[j]; order[j] = t; }
 
-    var discarded = [], found = false, hit = -1;
+    var discarded = [], found = false, hit = -1, misreads = 0;
     for (var q = 0; q < k && q < N; q++) {
-      var s = order[q];
-      if (perceive(target, sensorFlip) === s) { found = true; hit = s; break; }
+      var s = order[q], seen = perceive(target, sensorFlip);
+      if (seen !== target) misreads++;
+      if (seen === s) { found = true; hit = s; break; }
       discarded.push(s);
     }
 
@@ -118,7 +122,7 @@
       var left = N - discarded.length;
       for (i = 0; i < N; i++) probs.push(discarded.indexOf(i) >= 0 ? 0 : 1 / left);
     }
-    return { probs: probs, discarded: discarded, found: found, theory: Math.min(1, (k + 1) / N) };
+    return { probs: probs, discarded: discarded, found: found, theory: Math.min(1, (k + 1) / N), misreads: misreads };
   }
 
   function sample(probs) {
@@ -127,6 +131,17 @@
     var r = Math.random() * total, acc = 0;
     for (i = 0; i < probs.length; i++) { acc += probs[i]; if (r < acc) return i; }
     return probs.length - 1;
+  }
+
+  // Comentario honesto sobre lo que debe salir al correr el circuito exportado (depende de k).
+  function qiskitExpectation(k, bits) {
+    var pct = function (x) { return (100 * x).toFixed(1).replace('.', ',') + ' %'; };
+    var p = Math.pow(Math.sin((2 * k + 1) * THETA), 2);
+    var prev = k > 0 ? Math.pow(Math.sin((2 * k - 1) * THETA), 2) : 0;
+    var msg = "la clave '" + bits + "' debería salir ~" + pct(p) + " de las veces (teoría con k=" + k + ")";
+    if (k === 0) msg += ': sin iteraciones es puro azar, 1 de 8';
+    else if (p < prev) msg += ': ¡te pasaste de iteraciones! Con k=' + (k - 1) + ' la teoría daba ' + pct(prev);
+    return msg;
   }
 
   // Texto Qiskit ejecutable del circuito del cañón (oráculo para el sector `target`, por defecto 5 = '101').
@@ -165,7 +180,7 @@
     L.push('');
     L.push('sim = AerSimulator()');
     L.push('counts = sim.run(transpile(qc, sim), shots=1024).result().get_counts()');
-    L.push('print(counts)   # clave ' + "'" + bits + "' debería dominar con la probabilidad teórica de la tabla");
+    L.push('print(counts)   # ' + qiskitExpectation(k, bits));
     return L.join('\n');
   }
 
@@ -220,7 +235,8 @@
     check('marcador sin difusor: probabilidades iguales', dif < TOL && marked[5].re < 0 && base[5].re > 0,
       'cambio máx = ' + dif.toExponential(2));
 
-    // 5. Difusor sin superposición previa no mejora nada (desde |000> sale |000>).
+    // 5. Marcador + difusor sin superposición previa no mejoran el acierto: desde |000> el difusor
+    //    NO devuelve |000> (da amplitudes -0,75 y 0,25), pero el sector marcado queda en 1/16 < 1/8.
     var d0 = probsOf(diffuser(oracle(newState(), 5)));
     check('marcador + difusor sin superposición: no mejora el acierto (< 12,5%)', d0[5] < 0.125,
       'P(marcado) = ' + (100 * d0[5]).toFixed(2) + '%');
@@ -260,12 +276,48 @@
     for (i = 0; i < S; i++) cnt[sample(p4)]++;
     check('sample ~ probs', Math.abs(cnt[4] / S - p4[4]) < 0.015, (100 * cnt[4] / S).toFixed(1) + '% vs ' + (100 * p4[4]).toFixed(1) + '%');
 
+    // 10b. misreads: 0 con sensor perfecto; con sensor siempre falso, una por consulta/iteración.
+    var mqOk = true, mcOk = true;
+    for (k = 0; k < 4; k++) {
+      mqOk = mqOk && runQuantum({ k: k, target: 2 }).misreads === 0 && runQuantum({ k: k, target: 2, sensorFlip: 1 }).misreads === k;
+      var cf = runClassical({ k: k, target: 2, sensorFlip: 1 });
+      // con sensor siempre falso, cada consulta hecha se equivoca; el clásico puede parar antes si cree haber encontrado
+      mcOk = mcOk && runClassical({ k: k, target: 2 }).misreads === 0 && cf.misreads >= Math.min(k, 1) * (k ? 1 : 0) && cf.misreads <= k;
+    }
+    check('misreads: 0 sin ruido, = k con sensor siempre falso (cuántico)', mqOk && mcOk);
+
+    // 11. Fixtures de Qiskit (solo en Node: un navegador no puede leer archivos locales desde file://).
+    // Se generan con: python qiskit/validate.py --json
+    if (typeof require === 'function' && typeof __dirname !== 'undefined') {
+      try {
+        var fx = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'qiskit', 'fixtures', 'statevector_cases.json'), 'utf8'));
+        var fxErr = 0, n = 0;
+        fx.forEach(function (c) {
+          var p;
+          if (c.no_diffuser) p = probsOf(oracle(hadamard(newState()), c.target));
+          else if (c.no_hadamard) p = probsOf(diffuser(oracle(newState(), c.target)));
+          else p = runQuantum({ k: c.k, target: c.target }).probs;
+          for (var s = 0; s < N; s++) fxErr = Math.max(fxErr, Math.abs(p[s] - c.probs[s]));
+          n++;
+        });
+        check('coincide con Qiskit Statevector (' + n + ' casos, 8 sectores)', fxErr < TOL, 'error máx = ' + fxErr.toExponential(2));
+      } catch (e) {
+        console.log('%cOMITIDA comparación con fixtures de Qiskit (' + e.message + ')', 'color:#f39c12');
+      }
+    } else {
+      console.log('%cOMITIDA comparación con fixtures de Qiskit (solo en Node: node -e "require(\'./js/quantum.js\').selfTest()")', 'color:#f39c12');
+    }
+
     var pass = results.every(function (x) { return x.ok; });
     console.log('%c' + (pass ? '✔ Todo en verde' : '✘ Hay pruebas fallidas'), pass ? 'color:#2ecc71;font-size:14px' : 'color:#e74c3c;font-size:14px');
     return { pass: pass, results: results };
   }
 
   var Quantum = {
+    // σ del desfase por qubit y por pieza que reproduce la curva acierto-vs-k del ruido de FakeSherbrooke
+    // (IBM) en Qiskit Aer. Viene de qiskit/fixtures/noise_profile.json (generate_noise_profile.py).
+    // Es el nivel "completo"; el juego puede escalarlo (p. ej. × 0.5) para dar más o menos ruido.
+    CALIBRATED_PHASE_NOISE: 0.46,
     runQuantum: runQuantum,
     runClassical: runClassical,
     sample: sample,

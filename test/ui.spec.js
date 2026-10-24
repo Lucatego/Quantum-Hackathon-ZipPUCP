@@ -278,6 +278,96 @@
     assertEq(buttons().length, 0, 'el overlay sigue en pantalla');
   });
 
+  // ---------- Guía "Cómo jugar" ----------
+  function btn(re) { return buttons().filter(function (b) { return re.test(b.textContent); })[0]; }
+  function key(k) { document.dispatchEvent(new KeyboardEvent('keydown', { key: k })); }
+
+  test('contrato: UI.showGuide existe (aditivo)', function () { assertEq(typeof window.UI.showGuide, 'function', 'UI.showGuide'); });
+
+  dom('showStart: ofrece "Cómo jugar" sin quitar el botón Jugar', function () {
+    UI.showStart(function () {});
+    assert(btn(/^Jugar$/), 'falta Jugar');
+    assert(btn(/Cómo jugar/), 'falta Cómo jugar');
+    assertEq(buttons()[0].textContent, 'Jugar', 'Jugar debe ser el primer botón');
+  });
+
+  dom('showGuide: muestra la primera diapositiva y avanza/retrocede', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    assert(/El reto/.test(bodyText()), 'falta la primera diapositiva');
+    assert(btn(/Anterior/).disabled, 'Anterior debe estar deshabilitado en la primera');
+    btn(/Siguiente/).click();
+    assert(/Controles/.test(bodyText()), 'no avanzó');
+    btn(/Anterior/).click();
+    assert(/El reto/.test(bodyText()), 'no retrocedió');
+  });
+
+  dom('showGuide: la última diapositiva cierra y llama onClose una sola vez', function () {
+    window.Content = undefined;
+    var n = 0;
+    UI.showGuide(function () { n++; });
+    for (var i = 0; i < 20 && btn(/Siguiente/); i++) btn(/Siguiente/).click();
+    var done = btn(/Listo/); assert(done, 'falta el botón Listo en la última');
+    done.click();
+    assertEq(n, 1, 'onClose');
+    assertEq(buttons().length, 0, 'el overlay sigue en pantalla');
+  });
+
+  dom('showGuide: Saltar y Esc cierran una sola vez', function () {
+    var n = 0;
+    UI.showGuide(function () { n++; });
+    btn(/Saltar/).click();
+    assertEq(n, 1, 'Saltar');
+    UI.showGuide(function () { n++; });
+    key('Escape'); key('Escape');
+    assertEq(n, 2, 'Esc');
+  });
+
+  dom('showGuide: flechas del teclado navegan', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    key('ArrowRight');
+    assert(/Controles/.test(bodyText()), 'ArrowRight no avanzó');
+    key('ArrowLeft');
+    assert(/El reto/.test(bodyText()), 'ArrowLeft no retrocedió');
+    key('Escape');
+  });
+
+  dom('showGuide: usa Content.guide y escapa el texto', function () {
+    window.Content = { guide: [{ titulo: 'T-PROPIO <b id="xss">x</b>', texto: 'PARRAFO-1\nPARRAFO-2' }] };
+    UI.showGuide(function () {});
+    assert(bodyText().indexOf('PARRAFO-1') >= 0 && bodyText().indexOf('PARRAFO-2') >= 0, 'falta el texto de Content.guide');
+    assertEq(document.getElementById('xss'), null, 'el título se inyectó como HTML');
+    assert(btn(/Listo/), 'con una sola diapositiva el botón debe ser Listo');
+  });
+
+  dom('showGuide: Content.guide inválido cae al texto por defecto', function () {
+    window.Content = { guide: [{ titulo: 5 }, null] };
+    UI.showGuide(function () {});
+    assert(/El reto/.test(bodyText()), 'no usó el respaldo');
+    key('Escape');
+  });
+
+  dom('showGuide: la diapositiva de las barras incluye ejemplos dibujados', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    for (var i = 0; i < 3; i++) btn(/Siguiente/).click();
+    assert(/Cómo leer las barras/.test(bodyText()), 'no llegó a la diapositiva 4');
+    assertEq(document.querySelectorAll('#ui-overlay canvas').length, 2, 'se esperan 2 canvas (clásico y cuántico)');
+    key('Escape');
+  });
+
+  dom('showGuide: "Cómo jugar" desde el inicio abre la guía y al cerrar vuelve al inicio', function () {
+    var played = 0;
+    UI.showStart(function () { played++; });
+    btn(/Cómo jugar/).click();
+    assert(/El reto/.test(bodyText()), 'no abrió la guía');
+    btn(/Saltar/).click();
+    assert(btn(/^Jugar$/), 'no volvió al inicio');
+    btn(/^Jugar$/).click();
+    assertEq(played, 1, 'onPlay');
+  });
+
   dom('showEnd: log vacío no lanza y deja el botón de repetir', function () {
     window.Content = undefined; window.Quantum = undefined;
     UI.showEnd([], function () {});
