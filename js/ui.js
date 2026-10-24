@@ -227,6 +227,9 @@
       '#' + OVERLAY_ID + ' .ksel{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}' +
       '#' + OVERLAY_ID + ' .ksel button{margin:0}' +
       '#' + OVERLAY_ID + ' .wires{background:#080b16;border-radius:10px;padding:8px;overflow-x:auto}' +
+      '#' + OVERLAY_ID + ' .labstage{position:relative;height:260px;margin:8px 0;border-radius:12px;background:rgba(255,255,255,.04);overflow:hidden;display:flex;align-items:center;justify-content:center}' +
+      '#' + OVERLAY_ID + ' .labstage.flat{height:auto;padding:6px 0}' +
+      '#' + OVERLAY_ID + ' .ksel button[aria-pressed="true"]{outline:2px solid ' + COLOR.prob + '}' +
       '#' + OVERLAY_ID + ' .readout{color:' + COLOR.prob + ';font-weight:600}' +
       '#' + OVERLAY_ID + ' .chart{display:flex;gap:6px;align-items:flex-end;justify-content:center;margin:14px 0 4px}' +
       '#' + OVERLAY_ID + ' .cbars{display:flex;gap:4px;align-items:flex-end}' +
@@ -381,6 +384,9 @@
     { titulo: 'Tu cañón cuántico es un circuito', visual: 'circuit', texto:
       'Recoge piezas: H (superposición), M (marcador) y D (difusor). Cada par M + D es una iteración, es decir, un valor de k. R suelta la última pieza.\n' +
       'Prueba distintos k y mira cómo cambia el circuito y el acierto teórico.' },
+    { titulo: 'Laboratorio de k', visual: 'lab', texto:
+      'Las columnas son las amplitudes: cian si son positivas, rosas si son negativas. Los conos amarillos son las probabilidades. La placa blanca marca el sector buscado.\n' +
+      'Sube k y mira cómo crece la amplitud del sector buscado. Con k = 3 se pasa y vuelve a bajar.' },
     { titulo: 'La trampa de pasarse', visual: 'chart', texto:
       'Con 8 sectores y sin ruido, el cuántico mejora hasta k = 2 y después baja: con k = 3 la amplitud “da la vuelta”.\n' +
       'El clásico con k consultas acierta (k+1)/8: sube siempre, pero despacio.' },
@@ -595,7 +601,52 @@
     return all;
   }
 
-  var VISUALS = { sectors: visSectors, flow: visFlow, keys: visKeys, cannons: visCannons, mapping: visMapping, circuit: visCircuit, chart: visChart };
+  // Laboratorio: anillo 3D (si hay WebGL) o el mismo dibujo 2D del juego, con botones de k.
+  function visLab() {
+    var box = el('div', undefined, 'lab'), sel = el('div', undefined, 'ksel'), out = el('p', undefined, 'readout');
+    var I = window.Intro3D, stage = el('div', undefined, 'labstage'), flat = null, three = false;
+    stage.setAttribute('aria-hidden', 'true');
+    box.appendChild(stage);
+    function amps2d(k) {
+      var s = I && I.labState ? I.labState(k, 3) : null, amps = [], probs = [];
+      for (var i = 0; i < 8; i++) {
+        var p = s ? s.probs[i] : (i === 3 ? guideProbs().quantum[k] : (1 - guideProbs().quantum[k]) / 7);
+        var re = s ? s.amps[i] : (i === 3 ? Math.sqrt(p) : -Math.sqrt(p));
+        amps.push({ re: re, im: 0 }); probs.push(p);
+      }
+      return { amps: amps, probs: probs, theory: probs[3] };
+    }
+    function show(k, textOnly) {
+      circuitK = k;
+      if (three) I.setLab(k);
+      else if (!textOnly) {
+        stage.classList.add('flat');
+        var fresh = demoCanvas('Cuántico, k = ' + k, amps2d(k), 'quantum');
+        if (flat) stage.replaceChild(fresh, flat); else stage.appendChild(fresh);
+        flat = fresh;
+      }
+      out.textContent = 'k = ' + k + ': acierto teórico del cuántico ' + pct(guideProbs().quantum[k]) + ' · clásico con ' + k + ' consultas ' + pct(guideProbs().classic[k]);
+      Array.prototype.forEach.call(sel.children, function (b, i) { b.setAttribute('aria-pressed', i === k ? 'true' : 'false'); });
+    }
+    [0, 1, 2, 3].forEach(function (k) {
+      var b = el('button', 'k = ' + k, 'alt'); b.type = 'button';
+      b.addEventListener('click', function () { show(k); });
+      sel.appendChild(b);
+    });
+    box.appendChild(sel); box.appendChild(out);
+    if (!(I && typeof I.startLab === 'function')) { show(circuitK); return box; }
+    show(circuitK, true);
+    // El 3D mide su contenedor: se arranca cuando la diapositiva ya está en el DOM.
+    setTimeout(function () {
+      if (!box.isConnected) return;
+      try { three = !!I.startLab(stage, circuitK); } catch (e) { three = false; }
+      if (three) overlayCleanup = function () { if (typeof I.stop === 'function') I.stop(); };
+      show(circuitK);
+    }, 0);
+    return box;
+  }
+
+  var VISUALS = { lab: visLab, sectors: visSectors, flow: visFlow, keys: visKeys, cannons: visCannons, mapping: visMapping, circuit: visCircuit, chart: visChart };
 
   function showGuide(onClose) {
     var slides = guideSlides(), idx = 0, closed = false;
@@ -621,6 +672,7 @@
     }
     function render() {
       var s = slides[idx];
+      runCleanup();
       o.box.textContent = '';
       o.box.appendChild(el('h1', 'CÓMO JUGAR'));
       o.box.appendChild(el('p', (idx + 1) + ' / ' + slides.length, 'step'));

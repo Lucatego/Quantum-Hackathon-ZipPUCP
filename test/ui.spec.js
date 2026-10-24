@@ -527,6 +527,43 @@
     } finally { window.Quantum = saved; }
   });
 
+  dom('showGuide: el laboratorio de k (sin 3D) dibuja el anillo 2D y cambia con los botones', function () {
+    window.Content = undefined; window.Quantum = undefined;
+    var saved = window.Intro3D; window.Intro3D = undefined;
+    try {
+      UI.showGuide(function () {});
+      goToSlide(/Laboratorio de k/);
+      assertEq(document.querySelectorAll('#ui-overlay .labstage canvas').length, 1, 'un canvas de respaldo');
+      assert(/94,5 %/.test(bodyText()), 'k = 2 por defecto → 94,5 %');
+      btn(/^k = 3$/).click();
+      assert(/33,0 %/.test(bodyText()), 'k = 3 → 33,0 %');
+      assertEq(document.querySelectorAll('#ui-overlay .labstage canvas').length, 1, 'sigue habiendo un solo canvas');
+      key('Escape');
+    } finally { window.Intro3D = saved; }
+  });
+
+  dom('showGuide: el laboratorio usa Intro3D.startLab/setLab y lo detiene al salir de la diapositiva', function () {
+    window.Content = undefined; window.Quantum = undefined;
+    var saved = window.Intro3D, started = 0, ks = [], stops = 0;
+    try {
+      window.Intro3D = { startLab: function () { started++; return true; }, setLab: function (k) { ks.push(k); return true; }, stop: function () { stops++; } };
+      UI.showGuide(function () {});
+      // el 3D se arranca en un setTimeout(0): se captura y se ejecuta a mano
+      var realSet = window.setTimeout, pending = [];
+      window.setTimeout = function (f) { pending.push(f); return 0; };
+      try {
+        goToSlide(/Laboratorio de k/);
+      } finally { window.setTimeout = realSet; }
+      pending.forEach(function (f) { f(); });
+      assertEq(started, 1, 'arranca el 3D una vez');
+      btn(/^k = 1$/).click();
+      assertEq(ks[ks.length - 1], 1, 'setLab(1)');
+      btn(/Siguiente/).click();
+      assert(stops >= 1, 'se detiene al cambiar de diapositiva');
+      key('Escape');
+    } finally { window.Intro3D = saved; }
+  });
+
   dom('showGuide: la trampa muestra 8 barras y marca el k = 3 cuántico', function () {
     window.Content = undefined; window.Quantum = undefined;
     UI.showGuide(function () {});
