@@ -102,6 +102,14 @@
     return { dAngle: cl(nx) * PARALLAX_ANGLE, dHeight: -cl(ny) * PARALLAX_HEIGHT };
   }
 
+  // Inmersión: la cámara baja hacia el tanque (~0,8 s). Pura para poder probarla sin GPU.
+  var DIVE_MS = 800, DIVE_R = 2.6, DIVE_H = 1.5, DIVE_LOOK = 0.25;
+  function diveCamera(p, r0, h0) {
+    p = Math.max(0, Math.min(1, typeof p === 'number' && isFinite(p) ? p : 0));
+    var e = p * p * (3 - 2 * p);   // smoothstep
+    return { r: r0 + (DIVE_R - r0) * e, h: h0 + (DIVE_H - h0) * e, look: 0.4 + (DIVE_LOOK - 0.4) * e };
+  }
+
   function camDistance(aspect) { return aspect < 1.3 ? Math.min(11, 6.2 * 1.3 / aspect) : 6.2; }
 
   // ---- Escena ----
@@ -124,16 +132,29 @@
     return g;
   }
 
+  // Tanque low-poly estilo .io: casco, orugas, torreta que "apunta" y un halo cian (cañón cuántico).
   function buildTank(T) {
     var g = new T.Group();
-    var body = new T.Mesh(new T.BoxGeometry(0.7, 0.22, 0.9), new T.MeshStandardMaterial({ color: PAL.tank, roughness: 0.5 }));
-    body.position.y = 0.11;
-    var turret = new T.Mesh(new T.CylinderGeometry(0.2, 0.24, 0.16, 6), new T.MeshStandardMaterial({ color: PAL.tankDark, roughness: 0.5 }));
-    turret.position.y = 0.3;
-    var barrel = new T.Mesh(new T.BoxGeometry(0.09, 0.09, 0.62), new T.MeshStandardMaterial({ color: PAL.tank, roughness: 0.4 }));
-    barrel.position.set(0, 0.3, 0.4);
-    g.add(body, turret, barrel);
-    return g;
+    var mat = function (c, r) { return new T.MeshStandardMaterial({ color: c, roughness: r === undefined ? 0.5 : r }); };
+    var hull = new T.Mesh(new T.BoxGeometry(0.62, 0.2, 0.86), mat(PAL.tank));
+    hull.position.y = 0.2;
+    [-1, 1].forEach(function (s) {
+      var track = new T.Mesh(new T.BoxGeometry(0.17, 0.2, 1.0), mat(0x39425e, 0.8));
+      track.position.set(s * 0.4, 0.1, 0);
+      g.add(track);
+    });
+    var aim = new T.Group();                       // la torreta gira entera: se anima en el bucle
+    aim.position.y = 0.38;
+    var turret = new T.Mesh(new T.CylinderGeometry(0.2, 0.25, 0.18, 6), mat(PAL.tankDark));
+    var barrel = new T.Mesh(new T.BoxGeometry(0.09, 0.09, 0.62), mat(PAL.tank, 0.4));
+    barrel.position.set(0, 0, 0.42);
+    var muzzle = new T.Mesh(new T.BoxGeometry(0.13, 0.13, 0.08), mat(PAL.pos, 0.3));
+    muzzle.position.set(0, 0, 0.75);
+    aim.add(turret, barrel, muzzle);
+    var halo = new T.Mesh(new T.TorusGeometry(0.62, 0.025, 8, 48), new T.MeshBasicMaterial({ color: PAL.pos, transparent: true, opacity: 0.7 }));
+    halo.rotation.x = Math.PI / 2; halo.position.y = 0.03;
+    g.add(hull, aim, halo);
+    return { group: g, aim: aim, halo: halo };
   }
 
   // Niebla: pocas partículas translúcidas que derivan en círculos lentos.
@@ -187,7 +208,8 @@
 
     var ground = new T.Mesh(new T.CircleGeometry(R1 + 0.5, 48), new T.MeshBasicMaterial({ color: PAL.ground, transparent: true, opacity: 0.55 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.03; scene.add(ground);   // bajo las columnas: evita z-fighting con las que cuelgan (amplitud negativa)
-    scene.add(buildTank(T));
+    var tank = buildTank(T);
+    scene.add(tank.group);
 
     var sectors = [];
     for (var i = 0; i < 8; i++) {
@@ -198,7 +220,7 @@
       scene.add(col); scene.add(cone);
       sectors.push({ col: col, cone: cone });
     }
-    return { renderer: renderer, scene: scene, camera: camera, canvas: canvas, sectors: sectors, fog: buildFog(T, scene), caption: makeCaption(container) };
+    return { renderer: renderer, scene: scene, camera: camera, canvas: canvas, sectors: sectors, tank: tank, fog: buildFog(T, scene), caption: makeCaption(container) };
   }
 
   // Aplica un estado {amps, probs, caption} a las columnas: la altura sigue a |amplitud| y el signo da color y lado.
@@ -226,6 +248,24 @@
     l.fog.pts.visible = false;
   }
 
+  function diveStep(l, t, angle, dh) {
+    var d = l.dive;
+    if (d.t0 === null) d.t0 = t;
+    var p = Math.max(0, Math.min(1, (t - d.t0) / DIVE_MS));
+    var r0 = camDistance(l.camera.aspect), h0 = 3.6 * r0 / 6.2 + dh, c = diveCamera(p, r0, h0);
+    l.camera.position.set(c.r * Math.cos(angle), c.h, c.r * Math.sin(angle));
+    l.camera.lookAt(0, c.look, 0);
+    l.container.style.opacity = String(1 - Math.max(0, Math.min(1, (p - 0.55) / 0.45)));
+    if (p >= 1 && !d.done) { d.done = true; d.cb(); }
+  }
+
+  // dive(cb): true si arrancó la inmersión (cb se llama al terminar); false si no se puede (sin escena o con movimiento reducido).
+  function dive(cb) {
+    if (!live || live.reduce) return false;
+    if (!live.dive) live.dive = { t0: null, done: false, cb: typeof cb === 'function' ? cb : function () {} };
+    return true;
+  }
+
   function frame(t) {
     if (!live) return;
     if (live.t0 === null) live.t0 = t;
@@ -243,7 +283,13 @@
     driftFog(live.fog, ms / 1000);
     live.px += (live.tx - live.px) * 0.08; live.py += (live.ty - live.py) * 0.08;   // suavizado
     var par = parallaxOffset(live.px, live.py);
-    placeCamera(live, ms * 0.00012 + par.dAngle, par.dHeight);
+    var ang = ms * 0.00012 + par.dAngle;
+    if (live.tank) {                                   // la torreta barre de lado a lado; el halo late
+      live.tank.aim.rotation.y = Math.sin(ms / 1600) * 0.7;
+      var pulse = 1 + 0.06 * Math.sin(ms / 400);
+      live.tank.halo.scale.set(pulse, pulse, pulse);
+    }
+    if (live.dive) diveStep(live, t, ang, par.dHeight); else placeCamera(live, ang, par.dHeight);
     live.renderer.render(live.scene, live.camera);
     live.raf = requestAnimationFrame(frame);
   }
@@ -255,7 +301,7 @@
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
       var s = buildScene(T, container);
-      live = { renderer: s.renderer, scene: s.scene, camera: s.camera, canvas: s.canvas, sectors: s.sectors, fog: s.fog, caption: s.caption,
+      live = { renderer: s.renderer, scene: s.scene, camera: s.camera, canvas: s.canvas, sectors: s.sectors, tank: s.tank, fog: s.fog, caption: s.caption, reduce: reduce, dive: null,
         container: container, px: 0, py: 0, tx: 0, ty: 0, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: sequence(3) };
       live.onResize = function () {
         var w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
@@ -303,6 +349,6 @@
 
   window.Intro3D = {
     start: start, stop: stop, layout: layout, polar: polar, defaultResult: defaultResult, getResult: getResult,
-    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, parallaxOffset: parallaxOffset, timing: { HOLD: HOLD, MOVE: MOVE }
+    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, parallaxOffset: parallaxOffset, diveCamera: diveCamera, dive: dive, timing: { HOLD: HOLD, MOVE: MOVE }
   };
 })();

@@ -68,7 +68,7 @@ Con poco tiempo: **0 + 1 + 5**. Con holgura: **+ 2**. Fases 3 y 4 suben el nivel
 
 **Hecho cuando:** el bucle de ~12 s cuenta la idea sin sonido y sin leer la guía.
 
-### Fase 3: interacción y transición (30 min, opcional)
+### Fase 3: interacción y transición (30 min, opcional) — HECHA en `feat/ui` (parallax, inmersión al pulsar Jugar y tanque con halo; sin ver la inmersión a velocidad real)
 - Parallax con el mouse; en celular, ligero giro con el dedo (sin pedir permisos de giroscopio).
 - Al pulsar Jugar: la cámara baja hacia el tanque en ~0,8 s y entra el juego.
 - Tanque 3D con formas geométricas (cuerpo + torreta + cañón) en estilo .io.
