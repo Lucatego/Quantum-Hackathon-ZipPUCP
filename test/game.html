@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Collapse · prueba del juego</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0e1220; color: #e8ecf4; font-family: system-ui, sans-serif; overflow: hidden; }
+    canvas#game { display: block; width: 100vw; height: 100vh; }
+    .overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8,10,20,0.85); padding: 16px; }
+    .overlay .box { max-width: 520px; width: 100%; }
+    .overlay button { font-size: 18px; padding: 10px 24px; border: 0; border-radius: 8px; background: #4fc3f7; color: #0e1220; cursor: pointer; }
+    .overlay table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    .overlay td, .overlay th { border-bottom: 1px solid #333a50; padding: 4px 8px; text-align: left; }
+    .stub { position: fixed; top: 8px; right: 8px; font-size: 12px; opacity: .6; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div class="stub">STUBS de Quantum y UI (solo para probar game.js)</div>
+
+  <script>
+    // ---- STUB de Quantum: fórmulas analíticas, NO es el simulador real (ese es js/quantum.js de Avix) ----
+    window.Quantum = {
+      runQuantum: function (o) {
+        var theta = Math.asin(1 / Math.sqrt(8));
+        var a = Math.sin((2 * o.k + 1) * theta);
+        var rest = Math.cos((2 * o.k + 1) * theta) / Math.sqrt(7);
+        var amps = [], probs = [];
+        for (var i = 0; i < 8; i++) {
+          var v = i === o.target ? a : rest;
+          amps.push({ re: v, im: 0 });
+          probs.push(v * v);
+        }
+        return { amps: amps, probs: probs, theory: a * a };
+      },
+      runClassical: function (o) {
+        var order = [0, 1, 2, 3, 4, 5, 6, 7];
+        for (var s = 7; s > 0; s--) {
+          var j = Math.floor(Math.random() * (s + 1)), tmp = order[s];
+          order[s] = order[j]; order[j] = tmp;
+        }
+        var discarded = [], found = false;
+        for (var q = 0; q < o.k; q++) {
+          if (order[q] === o.target) { found = true; break; }
+          discarded.push(order[q]);
+        }
+        var probs = [];
+        for (var i = 0; i < 8; i++) {
+          if (found) probs.push(i === o.target ? 1 : 0);
+          else probs.push(discarded.indexOf(i) >= 0 ? 0 : 1 / (8 - discarded.length));
+        }
+        return { probs: probs, discarded: discarded, found: found, theory: (o.k + 1) / 8 };
+      },
+      sample: function (probs) {
+        var r = Math.random(), acc = 0;
+        for (var i = 0; i < probs.length; i++) { acc += probs[i]; if (r < acc) return i; }
+        return probs.length - 1;
+      },
+      toQiskit: function (k) { return '# stub: aquí va el circuito con k = ' + k; },
+      selfTest: function () { console.log('stub'); }
+    };
+
+    // ---- STUB de UI: dibujo mínimo (la UI real es js/ui.js de Gandy) ----
+    window.UI = {
+      drawHUD: function (ctx, s) {
+        ctx.font = '15px system-ui, sans-serif';
+        ctx.fillStyle = '#e8ecf4';
+        ctx.fillText('Cañón: ' + (s.cannon === 'quantum' ? 'CUÁNTICO' : 'CLÁSICO') + '  [1/2]', 16, 26);
+        ctx.fillText('k = ' + s.k + '  [Q/E]   costo: ' + s.cost, 16, 48);
+        ctx.fillText('Vida: ' + Math.round(s.hp) + '   Bots: ' + s.botsLeft, 16, 70);
+        ctx.fillStyle = '#333a50'; ctx.fillRect(16, 80, 200, 10);
+        ctx.fillStyle = '#ffe066'; ctx.fillRect(16, 80, 2 * s.energy, 10);
+        if (s.radar && Math.floor(performance.now() / 300) % 2 === 0) {
+          ctx.fillStyle = '#ffe066';
+          ctx.fillText('RADAR: hay alguien en la niebla (Espacio)', 16, 112);
+        }
+      },
+      drawSectors: function (ctx, x, y, result, cannon) {
+        var step = Math.PI / 4;
+        for (var i = 0; i < 8; i++) {
+          var a0 = i * step, a1 = (i + 1) * step;
+          var len = 30 + result.probs[i] * 170;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.arc(x, y, len, a0, a1);
+          ctx.closePath();
+          var gone = result.discarded && result.discarded.indexOf(i) >= 0;
+          ctx.fillStyle = gone ? 'rgba(120,120,120,0.35)' : 'rgba(79,195,247,0.35)';
+          ctx.fill();
+          if (cannon === 'quantum') {
+            var amp = result.amps[i].re, mid = a0 + step / 2;
+            ctx.strokeStyle = amp >= 0 ? '#7bd88f' : '#ff5c8a';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(mid) * 24, y + Math.sin(mid) * 24);
+            ctx.lineTo(x + Math.cos(mid) * (24 + Math.abs(amp) * 120), y + Math.sin(mid) * (24 + Math.abs(amp) * 120));
+            ctx.stroke();
+          }
+        }
+      },
+      showStart: function (onPlay) {
+        overlay('<h1>COLLAPSE (prueba)</h1><p>WASD para moverte, clic para disparar.</p>' +
+          '<p>Si el radar detecta a alguien en la niebla: elige cañón [1/2] y k [Q/E], y pulsa Espacio.</p>' +
+          '<p>Clásico: descarta sectores. Cuántico: amplifica amplitudes.</p>', 'Jugar', onPlay);
+      },
+      showEnd: function (log, onReplay) {
+        var groups = {};
+        log.forEach(function (e) {
+          var key = e.cannon + ' k=' + e.k;
+          groups[key] = groups[key] || { n: 0, hits: 0, theory: e.theory };
+          groups[key].n++; if (e.hit) groups[key].hits++;
+        });
+        var rows = Object.keys(groups).sort().map(function (key) {
+          var g = groups[key];
+          return '<tr><td>' + key + '</td><td>' + g.hits + '/' + g.n + '</td><td>' +
+            Math.round(100 * g.hits / g.n) + '%</td><td>' + Math.round(100 * g.theory) + '%</td></tr>';
+        }).join('');
+        overlay('<h2>Fin de la partida</h2><table><tr><th>Cañón</th><th>Aciertos</th><th>Observado</th><th>Teoría</th></tr>' +
+          (rows || '<tr><td colspan="4">Sin disparos de búsqueda</td></tr>') + '</table>', 'Jugar otra vez', onReplay);
+      }
+    };
+
+    function overlay(html, label, cb) {
+      var el = document.createElement('div');
+      el.className = 'overlay';
+      el.innerHTML = '<div class="box">' + html + '<button>' + label + '</button></div>';
+      el.querySelector('button').onclick = function () { el.remove(); cb(); };
+      document.body.appendChild(el);
+    }
+  </script>
+  <script src="../js/game.js"></script>
+  <script>
+    UI.showStart(function () { Game.start(); });
+  </script>
+</body>
+</html>
