@@ -31,6 +31,14 @@
     phaseNoise: 0.15,      // valor de respaldo si Quantum no trae la calibración
     sensorFlip: 0,         // ruido del sensor en niebla normal (afecta a ambos)
     stormSensorFlip: 0.25, // ruido del sensor dentro de la tormenta (afecta a ambos)
+    // Zona segura que se cierra por fases (sección 8.7 del brief). Fuera de ella está la tormenta:
+    // daño por tiempo y sensor poco fiable para los dos cañones.
+    zoneEnabled: true,
+    zonePhaseEvery: 30,    // segundos de juego entre cierres
+    zoneShrink: 0.7,       // el radio objetivo se multiplica por esto en cada cierre
+    zoneMinR: 380,         // radio mínimo
+    zoneShrinkSpeed: 25,   // píxeles por segundo mientras se cierra
+    zoneDamage: 4,         // vida por segundo fuera de la zona
     // La niebla se expande por fases (como la zona de un battle royale): más escondites, más búsquedas.
     fogPhaseEvery: 25,     // segundos de juego entre expansiones
     fogPhaseStep: 0.15,    // cuánto crece el radio en cada fase (× radio inicial)
@@ -53,7 +61,7 @@
     [0.28, 0.35, 220], [0.72, 0.58, 260, true], [0.52, 0.16, 160], [0.18, 0.8, 150],
   ];
   const FOG_LAYOUT_LARGE = [
-    [0.15, 0.2, 230], [0.42, 0.14, 200], [0.76, 0.18, 240], [0.28, 0.5, 260], [0.62, 0.46, 300, true],
+    [0.15, 0.2, 230], [0.42, 0.14, 200], [0.76, 0.18, 240], [0.28, 0.5, 260], [0.62, 0.46, 300],
     [0.88, 0.55, 210], [0.18, 0.84, 220], [0.52, 0.8, 250], [0.84, 0.86, 190],
   ];
 
@@ -85,7 +93,12 @@
     return Math.floor(a / SECTOR_ANGLE) % SECTORS;
   }
 
-  // 'tormenta' | 'niebla' | null
+  function outsideSafe(p) {
+    const z = world.zone;
+    return z.enabled && Math.hypot(p.x - z.x, p.y - z.y) > z.r;
+  }
+
+  // 'tormenta' | 'niebla' | null. Es tormenta la niebla de un banco de tormenta o fuera de la zona segura.
   function zoneOf(p) {
     let zone = null;
     for (const f of world.fog) {
@@ -98,7 +111,7 @@
         }
       }
     }
-    return zone;
+    return zone && outsideSafe(p) ? 'tormenta' : zone;
   }
 
   function inFog(p) {
@@ -106,7 +119,7 @@
   }
 
   function sensorFlipAt(p) {
-    return zoneOf(p) === 'tormenta' ? config.stormSensorFlip : config.sensorFlip;
+    return zoneOf(p) === 'tormenta' || outsideSafe(p) ? config.stormSensorFlip : config.sensorFlip;
   }
 
   function say(text) {
@@ -163,6 +176,15 @@
   // Destino de un bot que deambula: esconderse en la niebla, cazar cerca del jugador (en un mapa
   // grande, si no, casi no se cruzan) o explorar.
   function nextWaypoint() {
+    for (let i = 0; i < 12; i++) {
+      const wp = rawWaypoint();
+      if (!outsideSafe(wp)) return wp;
+    }
+    const z = world.zone, a = rand(0, Math.PI * 2), d = rand(0, z.r * 0.8);
+    return { x: clamp(z.x + Math.cos(a) * d, 60, config.world.w - 60), y: clamp(z.y + Math.sin(a) * d, 60, config.world.h - 60) };
+  }
+
+  function rawWaypoint() {
     const r = Math.random(), p = world.player;
     if (r < 0.45) return pointInFog();
     if (r < 0.8 && p.alive) {
@@ -190,6 +212,14 @@
     return { x, y, r: bound, rBound0: bound, storm, blobs };
   }
 
+  function makeZone(W, H) {
+    const r = Math.hypot(W, H) / 2 + 100;   // al principio cubre todo el mapa
+    return {
+      enabled: config.zoneEnabled, x: W * rand(0.4, 0.6), y: H * rand(0.4, 0.6),
+      r, rTarget: r, nextAt: config.zonePhaseEvery,
+    };
+  }
+
   function newWorld() {
     const W = config.world.w, H = config.world.h;
     const layout = W >= 3000 ? FOG_LAYOUT_LARGE : FOG_LAYOUT_SMALL;
@@ -207,6 +237,7 @@
       search: null, lastResult: null, radarBot: null,
       kills: 0,
       fogScale: 1, fogTarget: 1, nextFogAt: config.fogPhaseEvery,
+      zone: makeZone(W, H),
       time: 0, shake: 0, msg: '', msgT: 0,
       over: false, endT: 0,
     };
@@ -234,10 +265,10 @@
     }
   }
 
-  function damage(t, dmg, by) {
+  function damage(t, dmg, by, silent) {
     if (!t.alive) return;
     t.hp -= dmg;
-    t.flash = 0.12;
+    if (!silent) t.flash = 0.12;
     if (t.hp <= 0) {
       t.alive = false;
       burst(t.x, t.y, t.color, 26);
@@ -378,6 +409,7 @@
       b.revealed -= dt;
       const hidden = inFog(b);
       const enemy = nearestVisibleEnemy(b);
+      if (outsideSafe(b) && (b.wait > 0 || !b.wp || outsideSafe(b.wp))) { b.wait = 0; b.wp = nextWaypoint(); }
 
       if (playerHidden && b.searchCd <= 0 && dist(b, p) <= config.radarRange) botSearch(b);
 
@@ -387,8 +419,13 @@
         b.angle = a;
         const d = dist(b, enemy);
         const forward = d > 260 ? 1 : d < 180 ? -1 : 0;
-        const vx = Math.cos(a) * forward + Math.cos(a + Math.PI / 2) * 0.6;
-        const vy = Math.sin(a) * forward + Math.sin(a + Math.PI / 2) * 0.6;
+        let vx = Math.cos(a) * forward + Math.cos(a + Math.PI / 2) * 0.6;
+        let vy = Math.sin(a) * forward + Math.sin(a + Math.PI / 2) * 0.6;
+        if (outsideSafe(b)) {
+          // Fuera de la zona: vuelve hacia adentro sin dejar de disparar.
+          const az = Math.atan2(world.zone.y - b.y, world.zone.x - b.x);
+          vx = Math.cos(az); vy = Math.sin(az);
+        }
         b.x += vx * config.botSpeed * dt;
         b.y += vy * config.botSpeed * dt;
         if (b.fireCd <= 0) {
@@ -497,6 +534,22 @@
     }
   }
 
+  function updateZone(dt) {
+    const z = world.zone;
+    if (!z.enabled) return;
+    if (world.time >= z.nextAt) {
+      z.nextAt += config.zonePhaseEvery;
+      if (z.rTarget > config.zoneMinR) {
+        z.rTarget = Math.max(config.zoneMinR, z.rTarget * config.zoneShrink);
+        say('¡La zona se cierra! Afuera, la tormenta daña y el sensor falla');
+      }
+    }
+    if (z.r > z.rTarget) z.r = Math.max(z.rTarget, z.r - config.zoneShrinkSpeed * dt);
+    for (const t of tanks()) {
+      if (t.alive && outsideSafe(t)) damage(t, config.zoneDamage * dt, null, true);
+    }
+  }
+
   function update(dtReal) {
     const w = world;
     let dt = dtReal;
@@ -509,6 +562,7 @@
     w.energy = Math.min(config.energyMax, w.energy + config.energyRegen * dt);
     updatePlayer(dt);
     updateFog(dt);
+    updateZone(dt);
     updateBots(dt);
     updateBullets(dt);
     w.radarBot = w.player.alive ? radarTarget() : null;
@@ -615,7 +669,7 @@
     // Niebla y tormenta (encima de todo lo del mundo)
     for (const f of world.fog) {
       if (f.x + f.r < cam.x || f.x - f.r > cam.x + v.w || f.y + f.r < cam.y || f.y - f.r > cam.y + v.h) continue;
-      const rgb = f.storm ? '190,120,200' : '150,160,185';
+      const rgb = f.storm || outsideSafe(f) ? '190,120,200' : '150,160,185';
       for (const c of f.blobs) {
         const cx = f.x + c.dx, cy = f.y + c.dy;
         const g = ctx.createRadialGradient(cx, cy, c.r * 0.45, cx, cy, c.r);
@@ -633,6 +687,20 @@
         ctx.fillText('TORMENTA · sensor poco fiable', f.x, f.y - f.r * 0.6);
         ctx.textAlign = 'left';
       }
+    }
+
+    const z = world.zone;
+    if (z.enabled && z.r < Math.hypot(W, H)) {
+      ctx.beginPath();
+      ctx.rect(cam.x - 10, cam.y - 10, v.w + 20, v.h + 20);
+      ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2, true);
+      ctx.fillStyle = 'rgba(150,70,170,0.22)';
+      ctx.fill('evenodd');
+      ctx.strokeStyle = 'rgba(214,179,255,0.8)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     for (const t of world.tracers) {
@@ -710,6 +778,14 @@
         ctx.fill();
       }
     }
+    const z = world.zone;
+    if (z.enabled) {
+      ctx.strokeStyle = 'rgba(214,179,255,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(mx + z.x * s, my + z.y * s, z.r * s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.strokeStyle = 'rgba(232,236,244,0.35)';
     ctx.lineWidth = 1;
     ctx.strokeRect(mx + Math.max(0, cam.x) * s, my + Math.max(0, cam.y) * s, Math.min(W, v.w) * s, Math.min(H, v.h) * s);
@@ -747,6 +823,18 @@
       ctx.fillText('La niebla se está expandiendo…', v.w - 16, 60);
     } else if (world.fogTarget < config.fogMaxScale) {
       ctx.fillText('La niebla se expande en ' + Math.ceil(world.nextFogAt - world.time) + ' s', v.w - 16, 60);
+    }
+    const z = world.zone;
+    if (z.enabled) {
+      ctx.fillStyle = 'rgba(214,179,255,0.9)';
+      if (z.r > z.rTarget) ctx.fillText('La zona se está cerrando…', v.w - 16, 78);
+      else if (z.rTarget > config.zoneMinR) ctx.fillText('La zona se cierra en ' + Math.ceil(z.nextAt - world.time) + ' s', v.w - 16, 78);
+    }
+    if (world.player.alive && outsideSafe(world.player)) {
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff6b9d';
+      ctx.fillText('FUERA DE LA ZONA · pierdes vida y el sensor falla', v.w / 2, 30);
     }
 
     if (world.msgT > 0) {
@@ -852,7 +940,7 @@
 
   // Se aplica antes de crear el mundo: la demo usa el mapa chico (ya probado) para que sea predecible.
   function demoConfig() {
-    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
   }
 
   function setupDemo() {
