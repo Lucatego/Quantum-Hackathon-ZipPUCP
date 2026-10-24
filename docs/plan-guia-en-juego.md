@@ -38,7 +38,7 @@ Content.hints = { clave: 'texto corto', … }   // pistas
 
 **Hecho cuando:** el contrato nuevo está escrito en `TAREAS.md` (PR pequeño) y Alvaro tiene la lista de diapositivas y pistas por redactar.
 
-## Fase 1: pantalla "Cómo jugar" (30 min, solo UI)
+## Fase 1: pantalla "Cómo jugar" (30 min, solo UI) — HECHA en `feat/ui`
 Sin tocar `game.js`. Es el mínimo viable.
 
 **Diapositivas** (una idea cada una, textos cortos; fuente: `GUIA.md` secciones 3 a 5):

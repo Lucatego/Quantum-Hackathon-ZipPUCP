@@ -25,7 +25,7 @@ Un tanque que debe **encontrar y acertar a un enemigo escondido en la niebla**, 
 | **Disparo de búsqueda** | `Espacio` o clic derecho |
 
 ## 4. Cómo es una partida
-1. **Pantalla de inicio:** tres líneas de contexto y el botón **Jugar**.
+1. **Pantalla de inicio:** tres líneas de contexto, el botón **Jugar** y el botón **Cómo jugar**, que abre una guía de 6 diapositivas (reto, controles, los dos cañones, cómo leer las barras con ejemplo dibujado, la trampa de k = 3 y por qué una partida no demuestra nada). Se navega con los botones o con `←` `→` `Esc`.
 2. **Arena:** hay 5 bots que deambulan, pelean entre sí y contra ti. Hay **zonas de niebla** donde los bots se esconden: dentro no puedes verlos.
 3. **Disparo normal** (clic izquierdo): para enemigos que ves en campo abierto.
 4. **Radar:** si hay un enemigo **dentro de la niebla y a tu alcance**, el HUD muestra el indicador rosa parpadeante "¡Hay alguien! (Espacio)". Sabes *que* hay alguien, pero **no en cuál de los 8 sectores** que rodean tu tanque.
@@ -111,6 +111,7 @@ Quantum.selfTest()      // → imprime comprobaciones en consola
 UI.drawHUD(ctx, state)                     // state: { energy, cannon, k, radar, hp?, botsLeft?, cost?, costPerQuery?, searching? }
 UI.drawSectors(ctx, x, y, result, cannon)  // x, y en pantalla; result de run*; cannon 'classic' | 'quantum'
 UI.showStart(onPlay)
+UI.showGuide(onClose)                      // opcional (aditivo): guía "Cómo jugar" por diapositivas; showStart ya la ofrece
 UI.showEnd(log, onReplay)                  // log: [{ cannon, k, target, shot, hit, theory, t }]
 
 Game.start()  Game.log  Game.config
