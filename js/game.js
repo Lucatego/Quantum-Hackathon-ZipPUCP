@@ -14,7 +14,7 @@
     botSpeed: 110,
     bulletSpeed: 620,
     bulletDamage: 12,
-    bulletHeal: 8,
+    bulletHeal: 8,         // vida que recupera quien dispara una bala 0 al impactar
     searchDamage: 60,
     botBulletDamage: 6,
     fireCooldown: 0.25,
@@ -29,28 +29,34 @@
     costPerQuery: 20,      // igual para una consulta clásica que para una iteración cuántica
     slowmoDuration: 1.1,   // segundos reales que se muestran las barras antes del tiro
     slowmoScale: 0.12,
-    pickupRadius: 16,
-    hazardRadius: 44,
+    pickupRadius: 16,      // pickups de tipo de bala (0/1)
+    hazardRadius: 44,      // zonas H del piso
+    // Ruido del circuito (solo cuántico). En start() se toma como una fracción del nivel calibrado con
+    // FakeSherbrooke (Quantum.CALIBRATED_PHASE_NOISE = 0.46): 0.33 → k=2 ≈ 90 %; 1.0 → k=2 ≈ 60 % (nivel completo).
     phaseNoiseScale: 0.33,
     phaseNoise: 0.15,      // valor de respaldo si Quantum no trae la calibración
     sensorFlip: 0,         // ruido del sensor en niebla normal (afecta a ambos)
     stormSensorFlip: 0.25, // ruido del sensor dentro de la tormenta (afecta a ambos)
+    // Zona segura que se cierra por fases (sección 8.7 del brief). Fuera de ella está la tormenta:
+    // daño por tiempo y sensor poco fiable para los dos cañones.
     zoneEnabled: true,
-    zonePhaseEvery: 30,
-    zoneShrink: 0.7,
-    zoneMinR: 380,
-    zoneShrinkSpeed: 25,
-    zoneDamage: 4,
-    fogPhaseEvery: 25,
-    fogPhaseStep: 0.15,
-    fogMaxScale: 1.6,
-    fogGrowSpeed: 0.05,
+    zonePhaseEvery: 30,    // segundos de juego entre cierres
+    zoneShrink: 0.7,       // el radio objetivo se multiplica por esto en cada cierre
+    zoneMinR: 380,         // radio mínimo
+    zoneShrinkSpeed: 25,   // píxeles por segundo mientras se cierra
+    zoneDamage: 4,         // vida por segundo fuera de la zona
+    // La niebla se expande por fases (como la zona de un battle royale): más escondites, más búsquedas.
+    fogPhaseEvery: 25,     // segundos de juego entre expansiones
+    fogPhaseStep: 0.15,    // cuánto crece el radio en cada fase (× radio inicial)
+    fogMaxScale: 1.6,      // tamaño máximo (× radio inicial)
+    fogGrowSpeed: 0.05,    // velocidad de crecimiento durante una expansión (escala por segundo)
+    // Niebla viva: el viento la arrastra y los bancos se disipan y reaparecen en otro lugar.
     fogAlive: true,
-    windSpeed: 18,
-    windChangeEvery: 20,
-    dissipateEvery: 35,
-    dissipateTime: 3,
-    formTime: 4,
+    windSpeed: 18,         // píxeles por segundo
+    windChangeEvery: 20,   // segundos de juego entre cambios de dirección
+    dissipateEvery: 35,    // segundos de juego entre bancos que se disipan
+    dissipateTime: 3,      // segundos que tarda en desaparecer
+    formTime: 4,           // segundos que tarda en formarse el banco nuevo
     botSearchCooldown: 3.5,
     botSearchDamage: 10,
   };
@@ -288,25 +294,22 @@
     }
   }
 
+  // Regla: una curación siempre es para quien disparó (nunca cura al enemigo impactado); el daño es
+  // para el impactado y la baja se atribuye a quien disparó. Devuelve 'heal' o 'damage'.
   function applyBulletHit(target, bullet) {
-    if (!target || !target.alive) return;
-    if (bullet.superposed) {
-      if (bullet.outcome === 'heal') {
-        healTarget(target, Math.round((bullet.heal || config.bulletHeal) * 1.2));
-        burst(target.x, target.y, '#7ef7c7', 8);
-      } else {
-        damage(target, Math.round((bullet.dmg || config.bulletDamage) * 1.1));
-        burst(target.x, target.y, '#ff8c7b', 10);
-      }
-      return;
+    if (!target || !target.alive) return null;
+    const heals = bullet.superposed ? bullet.outcome === 'heal' : bullet.type === 0;
+    if (heals) {
+      const amount = Math.round((bullet.heal || config.bulletHeal) * (bullet.superposed ? 1.2 : 1));
+      const shooter = bullet.owner;
+      healTarget(shooter, amount);
+      if (shooter && shooter.alive) burst(shooter.x, shooter.y, '#7ef7c7', 8);
+      if (shooter && shooter.isPlayer) say('+' + amount + ' de vida' + (bullet.superposed ? ' (la bala pasó por H)' : ' (bala 0)'));
+      return 'heal';
     }
-    if (bullet.type === 0) {
-      healTarget(target, bullet.heal || config.bulletHeal);
-      burst(target.x, target.y, '#7ef7c7', 8);
-    } else {
-      damage(target, bullet.dmg || config.bulletDamage);
-      burst(target.x, target.y, '#ff8c7b', 10);
-    }
+    damage(target, Math.round((bullet.dmg || config.bulletDamage) * (bullet.superposed ? 1.1 : 1)), bullet.owner);
+    burst(target.x, target.y, '#ff8c7b', 10);
+    return 'damage';
   }
 
   function findHazardAt(x, y) {
@@ -580,8 +583,6 @@
         if (Math.hypot(u.x - t.x, u.y - t.y) < t.r + 4) {
           applyBulletHit(t, u);
           if (!t.isPlayer) t.revealed = Math.max(t.revealed, 0.4);
-          if (u.type === 0 && t.isPlayer) say('Pieza 0: energía restaurada');
-          if (u.type === 1 && t.isPlayer) say('Pieza 1: daño recibido');
           return false;
         }
       }

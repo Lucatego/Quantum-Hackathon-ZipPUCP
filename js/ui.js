@@ -168,7 +168,7 @@
       '#' + OVERLAY_ID + ' .box{width:100%;max-width:640px;margin:auto}' +
       '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + ';line-height:1.2}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px;line-height:1.3}' +
-      '#' + OVERLAY_ID + ' p, li, summary, pre, td, th{font-size:15px;line-height:1.5}' +
+      '#' + OVERLAY_ID + ' p,#' + OVERLAY_ID + ' li,#' + OVERLAY_ID + ' summary,#' + OVERLAY_ID + ' pre,#' + OVERLAY_ID + ' td,#' + OVERLAY_ID + ' th{font-size:15px;line-height:1.5}' +
       '#' + OVERLAY_ID + ' ul{margin:8px 0 0 18px;padding:0}' +
       '#' + OVERLAY_ID + ' li{margin:6px 0}' +
       '#' + OVERLAY_ID + ' button{min-height:44px;padding:0 18px;margin:8px 8px 0 0;font:600 15px system-ui,sans-serif;color:#0e1220;' +
@@ -181,6 +181,11 @@
       '#' + OVERLAY_ID + ' .card{background:rgba(232,236,244,.07);border-left:4px solid ' + COLOR.prob + ';border-radius:8px;padding:4px 14px 12px}' +
       '#' + OVERLAY_ID + ' .panel{background:rgba(232,236,244,.04);border:1px solid ' + COLOR.guide + ';border-radius:10px;padding:10px 12px;margin-top:14px}' +
       '#' + OVERLAY_ID + ' summary{cursor:pointer;color:' + COLOR.prob + ';min-height:44px;display:flex;align-items:center}' +
+      '#' + OVERLAY_ID + ' .step{margin:0;color:' + COLOR.prob + ';font-size:14px}' +
+      '#' + OVERLAY_ID + ' .demos{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:12px 0}' +
+      '#' + OVERLAY_ID + ' .demo{text-align:center;font-size:14px}' +
+      '#' + OVERLAY_ID + ' .demo canvas{display:block;max-width:100%;margin:0 auto}' +
+      '#' + OVERLAY_ID + ' button:disabled{opacity:.4;cursor:default}' +
       '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}';
     document.head.appendChild(s);
   }
