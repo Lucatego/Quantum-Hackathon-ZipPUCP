@@ -564,6 +564,171 @@
     } finally { window.Intro3D = saved; }
   });
 
+  // ---------- Definiciones, tarjetas que enseñan, ruta y fin de ronda ----------
+  test('UI.defs / UI.glossary: cada término del glosario existe y tiene título y definición', function () {
+    var seen = {};
+    UI.glossary.forEach(function (grp) {
+      assert(grp.g && grp.ids.length, 'grupo vacío');
+      grp.ids.forEach(function (id) {
+        assert(UI.defs[id] && UI.defs[id].t && UI.defs[id].d, 'falta la definición de ' + id);
+        assert(!seen[id], 'término repetido: ' + id); seen[id] = true;
+      });
+    });
+    ['sector', 'amplitud', 'marcador', 'difusor', 'medicion', 'sobrerotacion', 'decoherencia', 'inestable'].forEach(function (id) { assert(seen[id], 'falta en el glosario: ' + id); });
+  });
+
+  test('UI.defs: los textos pasan el checklist de Content.audit (sin ideas falsas sobre lo cuántico)', function () {
+    var C = typeof window !== 'undefined' && window.Content;
+    if (!C || typeof C.audit !== 'function') return;
+    var items = {};
+    Object.keys(UI.defs).forEach(function (id) { items[id] = UI.defs[id].d; });
+    var bad = C.audit(items).filter(function (f) { return !f.aclaracion; });
+    assertEq(bad.length, 0, 'frases marcadas: ' + JSON.stringify(bad));
+  });
+
+  test('teachEvents: en el primer cuadro (sin estado previo) no sale ninguna definición', function () {
+    var st = { cannon: 'classic', k: 1, circuit: [], radar: true };
+    assertEq(UI.teachEvents(null, st, [], [], {}).length, 0);
+  });
+
+  test('teachEvents: cada definición sale una sola vez (pieza recogida, radar, zona inestable, tormenta, balas)', function () {
+    var seen = {}, prev = { cannon: 'quantum', k: 1, circuit: ['H'], radar: false, searching: false, inHazardH: false, activeBulletType: 1 };
+    var st = { cannon: 'quantum', k: 1, circuit: ['H', 'M'], radar: true, searching: false, inHazardH: true, radarZone: 'tormenta', activeBulletType: 0 };
+    var keys = UI.teachEvents(prev, st, [], [], seen).map(function (c) { return c.key; });
+    ['marcador', 'radar', 'inestable', 'tormenta', 'balas'].forEach(function (k) { assert(keys.indexOf(k) >= 0, 'falta ' + k + ' en ' + keys); });
+    assertEq(UI.teachEvents(prev, st, [], [], seen).length, 0, 'no se repite');
+  });
+
+  test('teachEvents: al elegir el cuántico explica las piezas que ya tienes, en una sola tarjeta', function () {
+    var seen = {}, prev = { cannon: 'classic', k: 1, circuit: ['H', 'M', 'D'] };
+    var cards = UI.teachEvents(prev, { cannon: 'quantum', k: 1, circuit: ['H', 'M', 'D'] }, [], [], seen);
+    var c = cards.filter(function (x) { return x.key === 'circuito'; })[0];
+    assert(c, 'tarjeta del circuito');
+    ['H, superposición', 'M, marcador', 'D, difusor'].forEach(function (t) { assert(c.text.indexOf(t) >= 0, 'falta ' + t); });
+    assert(seen.marcador && seen.difusor && seen.superposicion, 'esas piezas no se vuelven a definir');
+  });
+
+  test('teachEvents: el resultado de un disparo trae la teoría y el recuento real', function () {
+    var log = [{ cannon: 'quantum', k: 2, hit: true, theory: 0.945 }];
+    var cards = UI.teachEvents({}, { cannon: 'quantum', circuit: [] }, log, log, {});
+    var r = cards.filter(function (c) { return c.kind === 'result'; })[0];
+    assert(/94,5 %/.test(r.text) && /Llevas 1\/1/.test(r.text), r.text);
+    assertEq(r.title, 'Qué pasó: acierto');
+    assert(cards.some(function (c) { return c.key === 'medicion'; }), 'la primera medición se define');
+  });
+
+  test('teachEvents: explica la sobre-rotación (k = 3), el ruido del sensor y el del circuito', function () {
+    var over = [{ cannon: 'quantum', k: 3, hit: false, theory: 0.33 }];
+    var t = UI.teachEvents({}, {}, over, over, {}).filter(function (c) { return c.kind === 'result'; })[0].text;
+    assert(/te pasaste/.test(t) && /33,0 %/.test(t), t);
+    var mis = [{ cannon: 'classic', k: 2, hit: false, theory: 0.375, misreads: 2 }];
+    assert(/2 veces/.test(UI.teachEvents({}, {}, mis, mis, {})[0].text), 'misreads');
+    var noisy = [{ cannon: 'quantum', k: 2, hit: false, theory: 0.945, phaseNoise: 0.15 }];
+    assert(/ruido del circuito/.test(UI.teachEvents({}, {}, noisy, noisy, {}).filter(function (c) { return c.kind === 'result'; })[0].text), 'phaseNoise');
+  });
+
+  dom('drawHUD: dentro de una partida (Game.log) dibuja la tarjeta de lo que acaba de pasar; fuera de ella no', function () {
+    var saved = window.Game;
+    try {
+      UI.teachReset();
+      window.Game = { log: [] };
+      var base = { cannon: 'classic', k: 1, energy: 50, hp: 100, radar: false, searching: false };
+      UI.drawHUD(makeRecordingCtx(), base);
+      var ctx = makeRecordingCtx();
+      UI.drawHUD(ctx, Object.assign({}, base, { radar: true }));
+      assert(texts(ctx).indexOf('Radar') >= 0, 'debe definir el radar: ' + texts(ctx));
+      assert(balanced(ctx) && badNumbers(ctx).length === 0, 'save/restore y números válidos');
+      UI.teachReset();
+      window.Game = undefined;
+      UI.drawHUD(makeRecordingCtx(), base);
+      var none = makeRecordingCtx();
+      UI.drawHUD(none, Object.assign({}, base, { radar: true }));
+      assert(texts(none).indexOf('Radar') < 0, 'sin Game no hay tarjetas');
+    } finally { window.Game = saved; UI.teachReset(); }
+  });
+
+  dom('showGuide: "Aprende jugando" muestra las 4 rondas de la Ruta con lo que se aprende', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/Ruta en 4 rondas/);
+    assertEq(document.querySelectorAll('#ui-overlay .fstep').length, 4, 'cuatro rondas');
+    var t = bodyText();
+    ['Niebla', 'Amplitudes', 'Sobre-rotación', 'Ruido', 'Aprendes:'].forEach(function (w) { assert(t.indexOf(w) >= 0, 'falta ' + w); });
+    key('Escape');
+  });
+
+  dom('showGuide: "Qué te avisa el juego" explica los mensajes de pantalla', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/Qué te avisa/);
+    var rows = document.querySelectorAll('#ui-overlay table.map tr').length;
+    assert(rows >= 8, 'filas de la tabla: ' + rows);
+    ['¡Acierto!', 'Fallo:', 'Energía insuficiente', '¡La zona se cierra!'].forEach(function (w) { assert(bodyText().indexOf(w) >= 0, 'falta ' + w); });
+    key('Escape');
+  });
+
+  dom('showGuide: el glosario agrupa todos los términos y el primer grupo viene abierto', function () {
+    window.Content = undefined;
+    UI.showGuide(function () {});
+    goToSlide(/Glosario/);
+    var total = 0; UI.glossary.forEach(function (g) { total += g.ids.length; });
+    assertEq(document.querySelectorAll('#ui-overlay .glossary .term').length, total, 'un renglón por término');
+    var groups = document.querySelectorAll('#ui-overlay .glossary details');
+    assertEq(groups.length, UI.glossary.length, 'un grupo por sección');
+    assert(groups[0].open && !groups[1].open, 'solo el primero abierto');
+    key('Escape');
+  });
+
+  dom('showStart: con Game.startRoute aparece el botón de la Ruta y arranca la ronda que toca', function () {
+    var saved = window.Game, got = [];
+    try {
+      window.Game = { startRoute: function (n) { got.push(n); }, routeProgress: 1, ROUTE_LENGTH: 4 };
+      var played = 0;
+      UI.showStart(function () { played++; });
+      var b = btn(/^Ruta · ronda 2 de 4$/);
+      assert(b, 'botón de la ruta: ' + bodyText());
+      b.click(); b.click();
+      assertEq(got.length, 1, 'startRoute una sola vez'); assertEq(got[0], 2, 'la ronda siguiente');
+      assertEq(played, 0, 'no arranca el modo normal');
+      assert(!document.getElementById('ui-overlay'), 'el inicio se cierra');
+      window.Game = { startRoute: function (n) { got.push(n); }, routeProgress: 4, ROUTE_LENGTH: 4 };
+      UI.showStart(function () {});
+      btn(/^Ruta de aprendizaje$/).click();
+      assertEq(got[1], 1, 'con la ruta completa vuelve a la ronda 1');
+    } finally { window.Game = saved; }
+  });
+
+  dom('showStart: sin Game.startRoute no hay botón de la Ruta', function () {
+    var saved = window.Game; window.Game = undefined;
+    try { UI.showStart(function () {}); assert(!btn(/Ruta/), 'no debe haber botón'); } finally { window.Game = saved; }
+  });
+
+  dom('showRoundEnd: ronda superada → tarjeta, palabras de la ronda, tabla y "Siguiente ronda" (una sola vez)', function () {
+    var saved = window.Content, next = 0;
+    try {
+      window.Content = { cards: { probClasica: { titulo: 'Descartar reparte', intuitivo: '<b>x</b> intuitivo', profundo: 'profundo' } } };
+      var log = [{ cannon: 'classic', k: 2, hit: true, theory: 0.375 }, { cannon: 'classic', k: 2, hit: false, theory: 0.375 }];
+      UI.showRoundEnd({ round: 1, total: 4, titulo: 'Niebla', card: 'probClasica', passed: true, log: log }, function () { next++; });
+      var t = bodyText();
+      assert(/RONDA 1 DE 4 · SUPERADA/.test(t), t);
+      ['Descartar reparte', 'Consulta', 'Cañón clásico', '37,5 %', '50,0 %'].forEach(function (w) { assert(t.indexOf(w) >= 0, 'falta ' + w); });
+      assert(t.indexOf('<b>x</b>') >= 0 && !document.querySelector('#ui-overlay .card b'), 'el texto se escapa');
+      var b = btn(/^Siguiente ronda$/); assert(b, 'botón siguiente');
+      b.click(); b.click();
+      assertEq(next, 1, 'next una sola vez');
+    } finally { window.Content = saved; }
+  });
+
+  dom('showRoundEnd: ronda fallida ofrece Reintentar; la última superada, el battle royale; datos incompletos no lanzan', function () {
+    window.Content = undefined;
+    UI.showRoundEnd({ round: 2, total: 4, passed: false, log: [] }, function () {});
+    assert(/SIGUE INTENTANDO/.test(bodyText()) && btn(/^Reintentar$/), 'fallida');
+    UI.showRoundEnd({ round: 4, total: 4, passed: true, log: [] }, function () {});
+    assert(btn(/^Ir al battle royale$/), 'última');
+    UI.showRoundEnd(undefined, undefined);
+    assert(btn(/Reintentar/), 'sin datos');
+  });
+
   dom('showGuide: la trampa muestra 8 barras y marca el k = 3 cuántico', function () {
     window.Content = undefined; window.Quantum = undefined;
     UI.showGuide(function () {});
