@@ -102,6 +102,13 @@
     lootWeights: { H: 20, M: 30, D: 30, S: 10 },
     circuitMax: 8,         // ranuras del circuito
     pieceRadius: 14,
+    // Calibrador (pieza C, el puente con QML): ajusta la fase φ de marcadores y difusores con descenso
+    // de gradiente (regla de desplazamiento de parámetros, Quantum.gradient), un paso por disparo.
+    calibAfter: 60,        // segundos de juego antes de que pueda aparecer
+    calibWeight: 4,        // peso en el sorteo de piezas (las demás suman 90)
+    calibStart: Math.PI - 0.3, // φ = π (Grover) es un punto estacionario: se arranca un poco corrido
+    calibLr: 1,            // tasa de aprendizaje (con valores ≥ 1,5 oscila con 3 iteraciones)
+    calibMaxStep: 0.5,     // paso máximo por disparo (rad)
   };
 
   // Piezas del circuito: nombre de respaldo (Content.pieces[x].nombre lo reemplaza) y color.
@@ -110,6 +117,7 @@
     M: { nombre: 'Marcador', color: '#ff6b9d' },
     D: { nombre: 'Difusor', color: '#ffd166' },
     S: { nombre: 'Estabilizador', color: '#80ed99' },
+    C: { nombre: 'Calibrador', color: '#b388ff' },
   };
 
   // Arquetipos de bots (sección 8.8): cómo buscan al jugador cuando se esconde en la niebla.
@@ -287,8 +295,17 @@
     return { type, x, y, bob: rand(0, Math.PI * 2), noPickUntil: 0 };
   }
 
+  function calibratorAvailable() {
+    return !!(window.Quantum && typeof window.Quantum.gradient === 'function');
+  }
+
   function randomPieceType() {
-    const wts = config.lootWeights, keysW = Object.keys(wts);
+    const wts = Object.assign({}, config.lootWeights), w = world;
+    // El calibrador es raro y aparece tarde; solo uno a la vez entre el piso y el circuito.
+    if (calibratorAvailable() && w.time >= config.calibAfter && !w.circuit.includes('C') && !w.groundPieces.some((g) => g.type === 'C')) {
+      wts.C = config.calibWeight;
+    }
+    const keysW = Object.keys(wts);
     let r = Math.random() * keysW.reduce((a, k) => a + wts[k], 0);
     for (const k of keysW) { r -= wts[k]; if (r < 0) return k; }
     return keysW[keysW.length - 1];
@@ -454,6 +471,7 @@
       fog, hazards, pickups, player, bots,
       circuit: [], groundPieces: [], circuitMode: false, nextLootAt: config.lootEvery,
       newConcepts: [], routeHits: 0, routeWon: false,
+      phi: config.calibStart, calibCurve: [],
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null, radarBot: null,
@@ -603,10 +621,11 @@
     const target = sectorOf(w.player, bot);
     const zone = zoneOf(bot);
     const sensorFlip = sensorFlipAt(bot);
+    const calibrated = w.cannon === 'quantum' && w.circuitMode && w.circuit.includes('C') && calibratorAvailable();
     const result = w.cannon === 'quantum' && w.circuitMode
-      ? window.Quantum.runCircuit({ pieces: w.circuit.slice(), target, phaseNoise: config.phaseNoise, sensorFlip })
+      ? window.Quantum.runCircuit({ pieces: w.circuit.slice(), target, phaseNoise: config.phaseNoise, sensorFlip, phi: calibrated ? w.phi : undefined })
       : runSearch(w.cannon, plan.k, target, sensorFlip);
-    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: plan.k, zone, sensorFlip, info: plan.info, phaseNoise: plan.phaseNoise };
+    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: plan.k, zone, sensorFlip, info: plan.info, phaseNoise: plan.phaseNoise, calibrated };
 
     if (w.cannon === 'quantum') {
       hint('primerCuantico');
@@ -629,6 +648,7 @@
       phaseNoise: s.phaseNoise,
       misreads: s.result.misreads || 0,
       circuit: s.info ? s.info.str : null,
+      phi: s.calibrated ? +(w.phi * 180 / Math.PI).toFixed(1) : null,
     };
     Game.log.push(entry);
     Game.history.push(entry);
@@ -652,7 +672,23 @@
       if (!hit && s.info.std === 3) hint('sobreRotacion');
       if (!hit && s.info.std === 2) hint('ruidoCircuito');
     }
+    if (s.calibrated) calibrationStep(s.result.theory);
     onSearchResolved(entry, s);
+  }
+
+  // Un paso de entrenamiento: sube φ en la dirección que aumenta el acierto medio sobre los 8 sectores
+  // (no usa dónde estaba el enemigo). Es entrenar un circuito parametrizado, como en QML.
+  // theory: acierto ideal (sin ruido) del circuito con el φ que se acaba de usar; con la búsqueda exacta
+  // llega a 100 %. El logro se gana ahí, porque con ruido el acierto medio nunca llega al 99 %.
+  function calibrationStep(theory) {
+    const w = world;
+    const g = window.Quantum.gradient({ pieces: w.circuit.slice(), phi: w.phi, phaseNoise: config.phaseNoise });
+    w.calibCurve.push(g.value);
+    if (w.calibCurve.length > 40) w.calibCurve.shift();
+    w.phi += clamp(config.calibLr * g.dphi, -config.calibMaxStep, config.calibMaxStep);
+    w.phi = ((w.phi % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    if (theory >= 0.99) unlock('calibracion');
+    hint('calibrador');
   }
 
   // Detecta los logros a partir de lo que pasó en la búsqueda (no hay quizzes: se gana jugando).
@@ -1282,6 +1318,8 @@
       circuit: w.circuit.slice(),
       circuitMax: config.circuitMax,
       circuitMode: w.circuitMode,
+      phi: w.circuit.includes('C') ? w.phi : null,
+      calibCurve: w.calibCurve.slice(),
       concepts: Object.keys(Game.collection.unlocked).length,
       conceptsTotal: Object.keys(ACHIEVEMENTS).length,
       searching: !!w.search,
@@ -1376,6 +1414,29 @@
         ctx.fillText(t, x + sz / 2, y0 + sz / 2 + 5);
         ctx.textAlign = 'left';
       }
+    }
+  }
+
+  // Panel del calibrador: φ actual, acierto medio teórico y la curva de entrenamiento (un punto por disparo).
+  function drawCalibration(x, y) {
+    const UIm = window.UI, w = world;
+    if (UIm && UIm.drawCalibration) return UIm.drawCalibration(ctx, { phi: w.phi, curve: w.calibCurve.slice() });
+    if (!calibratorAvailable()) return;
+    const curve = w.calibCurve, last = curve.length ? curve[curve.length - 1] : null;
+    ctx.fillStyle = 'rgba(8,10,20,0.75)';
+    ctx.fillRect(x, y, 236, 48);
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillStyle = '#b388ff';
+    ctx.fillText('Calibrador · φ = ' + Math.round(w.phi * 180 / Math.PI) + '°' + (last !== null ? ' · acierto medio ' + Math.round(last * 100) + ' %' : ' · dispara para entrenar'), x + 6, y + 14);
+    if (curve.length > 1) {
+      ctx.strokeStyle = '#b388ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      curve.forEach((val, i) => {
+        const px = x + 6 + (i / (curve.length - 1)) * 224, py = y + 44 - val * 24;
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.stroke();
     }
   }
 
@@ -1476,6 +1537,7 @@
     if (world.circuitMode) {
       if (UIm && UIm.drawCircuit) UIm.drawCircuit(ctx, hudState());
       else drawCircuitBar(v);
+      if (world.circuit.includes('C')) drawCalibration(12, v.h - 26 - 30 - 64);
     }
     drawMinimap(v);
     drawOverlayText(v);
