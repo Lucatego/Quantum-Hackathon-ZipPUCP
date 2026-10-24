@@ -44,6 +44,13 @@
     fogPhaseStep: 0.15,    // cuánto crece el radio en cada fase (× radio inicial)
     fogMaxScale: 1.6,      // tamaño máximo (× radio inicial)
     fogGrowSpeed: 0.05,    // velocidad de crecimiento durante una expansión (escala por segundo)
+    // Niebla viva: el viento la arrastra y los bancos se disipan y reaparecen en otro lugar.
+    fogAlive: true,
+    windSpeed: 18,         // píxeles por segundo
+    windChangeEvery: 20,   // segundos de juego entre cambios de dirección
+    dissipateEvery: 35,    // segundos de juego entre bancos que se disipan
+    dissipateTime: 3,      // segundos que tarda en desaparecer
+    formTime: 4,           // segundos que tarda en formarse el banco nuevo
     botSearchCooldown: 3.5,
     botSearchDamage: 10,
   };
@@ -209,7 +216,7 @@
     }
     for (const c of blobs) { c.dx = c.dx0; c.dy = c.dy0; c.r = c.r0; }
     const bound = Math.max(...blobs.map((c) => Math.hypot(c.dx0, c.dy0) + c.r0));
-    return { x, y, r: bound, rBound0: bound, storm, blobs };
+    return { x, y, r: bound, rBound0: bound, size, storm, blobs, fade: 1, state: 'estable' };
   }
 
   function makeZone(W, H) {
@@ -237,6 +244,8 @@
       search: null, lastResult: null, radarBot: null,
       kills: 0,
       fogScale: 1, fogTarget: 1, nextFogAt: config.fogPhaseEvery,
+      wind: { ang: rand(0, Math.PI * 2), nextAt: config.windChangeEvery },
+      nextDissipateAt: config.dissipateEvery,
       zone: makeZone(W, H),
       time: 0, shake: 0, msg: '', msgT: 0,
       over: false, endT: 0,
@@ -433,8 +442,13 @@
           b.fireCd = config.botFireCooldown + rand(0, 0.5);
         }
       } else if (b.wait > 0) {
-        // Acampando (normalmente dentro de la niebla).
+        // Acampando (normalmente dentro de la niebla); si la niebla se mueve, se mueve con ella.
         b.wait -= dt;
+        if (config.fogAlive && hidden) {
+          const wv = windVec();
+          b.x += wv.x * dt;
+          b.y += wv.y * dt;
+        }
       } else {
         if (!b.wp) b.wp = nextWaypoint();
         const a = Math.atan2(b.wp.y - b.y, b.wp.x - b.x);
@@ -528,9 +542,63 @@
       }
     }
     if (w.fogScale < w.fogTarget) w.fogScale = Math.min(w.fogTarget, w.fogScale + config.fogGrowSpeed * dt);
+    if (config.fogAlive) updateFogLife(dt);
     for (const f of w.fog) {
-      f.r = f.rBound0 * w.fogScale;
-      for (const c of f.blobs) { c.dx = c.dx0 * w.fogScale; c.dy = c.dy0 * w.fogScale; c.r = c.r0 * w.fogScale; }
+      const k = w.fogScale * f.fade;
+      f.r = f.rBound0 * k;
+      for (const c of f.blobs) { c.dx = c.dx0 * k; c.dy = c.dy0 * k; c.r = c.r0 * k; }
+    }
+  }
+
+  function windVec() {
+    return { x: Math.cos(world.wind.ang) * config.windSpeed, y: Math.sin(world.wind.ang) * config.windSpeed };
+  }
+
+  // Dónde aparece un banco nuevo: dentro de la zona segura y lejos del jugador.
+  function fogSpawnPoint() {
+    const z = world.zone, p = world.player, W = config.world.w, H = config.world.h;
+    for (let i = 0; i < 30; i++) {
+      let q;
+      if (z.enabled) {
+        const a = rand(0, Math.PI * 2), d = rand(0, z.r * 0.8);
+        q = { x: z.x + Math.cos(a) * d, y: z.y + Math.sin(a) * d };
+      } else q = randomPoint();
+      q.x = clamp(q.x, 150, W - 150); q.y = clamp(q.y, 150, H - 150);
+      if (dist(q, p) > 350) return q;
+    }
+    return randomPoint(p, 350);
+  }
+
+  function updateFogLife(dt) {
+    const w = world, W = config.world.w, H = config.world.h, wv = windVec();
+    if (w.time >= w.wind.nextAt) {
+      w.wind.nextAt += config.windChangeEvery;
+      w.wind.ang += rand(-1.2, 1.2);
+    }
+    if (w.time >= w.nextDissipateAt) {
+      w.nextDissipateAt += config.dissipateEvery;
+      const pool = w.fog.filter((f) => !f.storm && f.state === 'estable');
+      if (pool.length) {
+        pool[Math.floor(Math.random() * pool.length)].state = 'disipando';
+        say('¡Un banco de niebla se disipa!');
+      }
+    }
+    for (const f of w.fog) {
+      if (f.storm) continue;   // la tormenta circular (mapa de ?demo) no se mueve
+      f.x += wv.x * dt;
+      f.y += wv.y * dt;
+      // Si el viento la saca del mapa, se disipa y reaparece en otro lugar.
+      if (f.state === 'estable' && (f.x < -f.r * 0.2 || f.y < -f.r * 0.2 || f.x > W + f.r * 0.2 || f.y > H + f.r * 0.2)) f.state = 'disipando';
+      if (f.state === 'disipando') {
+        f.fade -= dt / config.dissipateTime;
+        if (f.fade <= 0) {
+          const q = fogSpawnPoint(), nb = makeFogBank(q.x, q.y, f.size, false);
+          Object.assign(f, nb, { fade: 0, state: 'formando' });
+        }
+      } else if (f.state === 'formando') {
+        f.fade += dt / config.formTime;
+        if (f.fade >= 1) { f.fade = 1; f.state = 'estable'; }
+      }
     }
   }
 
@@ -824,6 +892,13 @@
     } else if (world.fogTarget < config.fogMaxScale) {
       ctx.fillText('La niebla se expande en ' + Math.ceil(world.nextFogAt - world.time) + ' s', v.w - 16, 60);
     }
+    if (config.fogAlive) {
+      const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+      let a = world.wind.ang % (Math.PI * 2);
+      if (a < 0) a += Math.PI * 2;
+      ctx.fillStyle = 'rgba(232,236,244,0.8)';
+      ctx.fillText('Viento ' + arrows[Math.round(a / (Math.PI / 4)) % 8], v.w - 16, 96);
+    }
     const z = world.zone;
     if (z.enabled) {
       ctx.fillStyle = 'rgba(214,179,255,0.9)';
@@ -940,7 +1015,7 @@
 
   // Se aplica antes de crear el mundo: la demo usa el mapa chico (ya probado) para que sea predecible.
   function demoConfig() {
-    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
+    Object.assign(config, { world: { w: 2000, h: 1300 }, bots: 6, zoneEnabled: false, fogAlive: false, energyRegen: 30, botBulletDamage: 3, botSearchDamage: 4 });
   }
 
   function setupDemo() {
