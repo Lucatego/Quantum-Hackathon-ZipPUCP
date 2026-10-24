@@ -204,4 +204,26 @@
     Intro3D.stop();
     assertEq(Intro3D.dive(function () {}), false, 'sin escena');
   });
+
+  // ---------- Laboratorio de k ----------
+  test('Intro3D.labState: k = 0..3 reproduce la tabla (12,5 / 78,1 / 94,5 / 33,0 %) en el sector buscado', function () {
+    var expected = [0.125, 0.781, 0.945, 0.330];
+    for (var k = 0; k < 4; k++) {
+      var s = Intro3D.labState(k, 3);
+      assertClose(s.probs[3], expected[k], 1.5e-3, 'k=' + k);
+      assertEq(s.amps.length, 8, 'ocho amplitudes'); assertEq(s.probs.length, 8, 'ocho probabilidades');
+      assert(s.caption.indexOf('k = ' + k) === 0, 'el pie empieza con k');
+      var sum = 0; s.probs.forEach(function (p) { sum += p; }); assertClose(sum, 1, 1e-6, 'suma 1');
+    }
+  });
+
+  test('Intro3D.labState: recorta k y tolera valores inválidos', function () {
+    assertEq(Intro3D.labState(9, 3).k, 3, 'k > 3'); assertEq(Intro3D.labState(-2, 3).k, 0, 'k < 0');
+    assertEq(Intro3D.labState(NaN, 3).k, 0, 'NaN'); assertEq(Intro3D.labState(1.6, 3).k, 2, 'redondea');
+  });
+
+  test('Intro3D.setLab: sin laboratorio en marcha devuelve false', function () {
+    Intro3D.stop();
+    assertEq(Intro3D.setLab(2), false, 'sin escena');
+  });
 })();

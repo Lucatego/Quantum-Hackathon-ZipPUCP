@@ -26,7 +26,11 @@ Un tanque que debe **encontrar y acertar a un enemigo escondido en la niebla**, 
 | **Disparo de búsqueda** | `Espacio` o clic derecho |
 
 ## 4. Cómo es una partida
-1. **Pantalla de inicio:** tres líneas de contexto, el botón **Jugar** y el botón **Cómo jugar**, que abre una guía de 8 diapositivas (el reto, cómo se juega, controles con teclas dibujadas, los dos cañones, qué tiene que ver con la computación cuántica, tu cañón como circuito interactivo, la trampa de pasarse con gráfico y por qué una partida no demuestra nada). Se navega con los botones o con `←` `→` `Esc`.
+1. **Pantalla de inicio:** tres líneas de contexto, el botón **Jugar** y el botón **Cómo jugar**, que abre una guía de 12 diapositivas (el reto, cómo se juega, la Ruta en 4 rondas, controles con teclas dibujadas, qué te avisa el juego, los dos cañones, qué tiene que ver con la computación cuántica, tu cañón como circuito interactivo, un laboratorio de k con el anillo en 3D, la trampa de pasarse con gráfico, un glosario y por qué una partida no demuestra nada). de pasarse Se navega con los botones o con `←` `→` `Esc`.
+2. **Cómo enseña el juego mientras juegas** (todo en `js/ui.js`, sin tocar `game.js`):
+   - **Ruta de aprendizaje:** el inicio tiene un botón que llama a `Game.startRoute(n)` con la ronda que toca (la siguiente a `Game.routeProgress`). Al terminar cada ronda, `UI.showRoundEnd` muestra la idea de la ronda (`Content.cards`), las palabras nuevas y observado frente a teoría.
+   - **Tarjetas a la izquierda, bajo el HUD:** `drawHUD` define cada término la primera vez que aparece (radar, pieza recogida, zona inestable, tormenta, tipo de bala, consulta…) y, después de cada disparo, explica qué pasó con la teoría y el recuento real. Solo se activan dentro de una partida (`Game.log` existe) y cada definición sale una vez por sesión.
+   - **Glosario único:** `UI.defs` y `UI.glossary` alimentan la guía, las tarjetas y el fin de ronda. Sus textos pasan `Content.audit`.
 2. **Arena:** hay 5 bots que deambulan, pelean entre sí y contra ti. Hay **zonas de niebla** donde los bots se esconden: dentro no puedes verlos.
 3. **Disparo normal** (clic izquierdo): para enemigos que ves en campo abierto.
 4. **Radar:** si hay un enemigo **dentro de la niebla y a tu alcance**, el HUD muestra el indicador rosa parpadeante "¡Hay alguien! (Espacio)". Sabes *que* hay alguien, pero **no en cuál de los 8 sectores** que rodean tu tanque.
