@@ -105,3 +105,58 @@ El entorno usado aquí es `qhub-env` (conda): `qiskit 2.4.1`, `qiskit-aer 0.17.2
 - La ventaja cuadrática es para este problema idealizado de búsqueda sin estructura, con un oráculo dado. No es "el cuántico siempre es más rápido".
 - Una simulación de 3 qubits no demuestra ventaja cuántica general.
 - El ruido de datos y la decoherencia no son lo mismo.
+
+## 7. Fase 3: circuito armado con piezas y calibrador
+
+### API (solo agrega; `runQuantum` y `runClassical` no cambian)
+
+```js
+Quantum.runCircuit({ pieces: ['H','M','D',...], target, phaseNoise, sensorFlip, phi })
+  // → { amps, probs, ideal, theory, queries, misreads }
+Quantum.gradient({ pieces, phi, phaseNoise })  // → { value, dphi }
+Quantum.exactPhi(k)                            // → φ (rad) de la búsqueda exacta, o null
+Quantum.toQiskit(piecesOrK, target, phi)       // acepta k (número) o el circuito armado
+```
+
+- **El circuito se ejecuta tal cual**, desde |000⟩ y en el orden recibido. No hay casos especiales: las configuraciones erróneas fallan porque la matemática lo dice.
+- `H` superposición · `M` marcador (suma 1 a `queries`: es la consulta al sensor que paga el juego) · `D` difusor · `S` no cambia el estado y **reduce a la mitad σ** si está presente · `C` no es una compuerta (lo usa el juego para ajustar φ).
+- `phi` omitido = π (Grover estándar). Con φ general: `M_φ` multiplica por e^{iφ} la amplitud del sector marcado y `D_φ = (1 − e^{iφ})|s⟩⟨s| − I`.
+- `ideal` es el mismo circuito sin ruido del circuito y con sensor perfecto; `theory = ideal[target]`. Con el circuito estándar coincide con `sin²((2k+1)θ)`.
+
+### Configuraciones erróneas (verificadas con Qiskit)
+
+| Circuito | Acierto del sector marcado | Por qué |
+|---|---|---|
+| `H M` | 12,5 % | marcador sin difusor: solo cambia el signo |
+| `H D` | 12,5 % | difusor sin marcador: no hay nada que amplificar |
+| `H M M D` | 12,5 % | dos marcadores se cancelan |
+| `M D M D` (sin H) | **14,1 %** (9/64) | no es exactamente 12,5 %: desde \|000⟩ el difusor sí mezcla amplitudes. Es una mejora mínima |
+| `H M D` + `S` | 78,1 % | S no cambia el estado |
+| `H (M D)×3` | 33,0 % | sobre-rotación |
+
+Ojo con la frase "sin H no hay mejora": es casi cierta (+1,6 puntos), pero no exacta.
+
+### Búsqueda exacta (Long, 2001) y el calibrador
+
+`sin(π/(4J+6)) = sin β · sin(φ/2)`, con `sin β = 1/√8` y **J = k − 1**. Con esa φ el acierto es **100 % en los 8 sectores** (Qiskit `Statevector`):
+
+| k | φ | Acierto con φ = π | Acierto con φ de Long |
+|---|---|---|---|
+| 1 | no existe | 78,1 % | (máximo 78,1 %) |
+| 2 | 121,86° | 94,5 % | 100 % |
+| 3 | 78,01° | 33,0 % | **100 %** (corrige la sobre-rotación) |
+| 4 | 58,83° | 1,2 % | 100 % |
+
+> **Corrección a `TAREAS.md`:** la fase 3 decía "2 iteraciones: φ ≈ 78°; 3 iteraciones: φ ≈ 59°". Está desfasado en uno: **78° es para k = 3 y 59° para k = 4**, porque Long cuenta J + 1 iteraciones. Se detectó con la validación contra Qiskit, no con la fórmula.
+
+**Calibrador = descenso de gradiente con regla de desplazamiento de parámetros.** φ aparece en varias compuertas (cada `M` y cada `D`), y cada una tiene un generador con brecha 1, así que `dP/dφ = Σ_j [P(φ_j + π/2) − P(φ_j − π/2)] / 2`, desplazando una compuerta a la vez. El objetivo es el acierto medio sobre los 8 sectores, que **no depende de dónde está el enemigo**. Coincide con diferencias finitas (error ~5e-11).
+
+**Cuidados para quien lo use en el juego (Lucas):**
+- **φ = π es un punto estacionario** (la derivada vale 0 ahí, por simetría): el entrenamiento no se mueve. Hay que arrancar con un desvío, p. ej. φ₀ = π − 0,3.
+- La **tasa de aprendizaje** importa: para k = 3 con paso 0,5 converge en ~8 pasos (36 % → 100 %, φ → 78,0°). Con paso 1,5 oscila entre ~76 % y ~92 %. Para k = 2 el paso 1,5 funciona.
+- Con ruido (`phaseNoise > 0`) el gradiente se promedia con 40 repeticiones por sector y es ruidoso; el máximo ya no llega a 100 %.
+- Cómo decirlo: "entrenar un circuito parametrizado", nunca "el juego usa IA". El 100 % es de una simulación sin ruido.
+
+### Cómo se validó
+
+`python qiskit/validate.py --json` escribe `statevector_cases.json` (41 casos) y `circuit_cases.json` (80 casos: configuraciones erróneas y φ de Long). `selfTest()` en Node compara los dos con `runCircuit` (error ~4e-15). Además, el código de `toQiskit(piezas, target, φ)` se ejecutó en Aer: con φ de Long da 1024 de 1024 disparos en el sector marcado para k = 2 y k = 3.

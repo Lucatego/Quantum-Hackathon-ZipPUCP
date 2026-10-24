@@ -98,6 +98,90 @@
     };
   }
 
+  // ---------- circuito armado con piezas (contrato v3) ----------
+  // Piezas: H superposición · M marcador (cuesta 1 consulta al sensor) · D difusor ·
+  //         S estabilizador (no cambia el estado; reduce a la mitad el ruido del circuito) ·
+  //         C calibrador (no es una compuerta: solo lo usa el juego para ajustar φ).
+  // El circuito se ejecuta TAL CUAL, desde |000>, en el orden recibido: no hay casos especiales.
+  // Fase generalizada (búsqueda exacta, Long 2001): φ = π es el Grover estándar.
+  var PI = Math.PI;
+  function expi(phi) { return phi === PI ? { re: -1, im: 0 } : { re: Math.cos(phi), im: Math.sin(phi) }; }
+  function cmul(x, y) { return { re: x.re * y.re - x.im * y.im, im: x.re * y.im + x.im * y.re }; }
+
+  // M_φ: multiplica por e^{iφ} la amplitud del sector marcado (φ = π → cambio de signo).
+  function oraclePhi(a, marked, phi) {
+    var e = expi(phi);
+    return a.map(function (z, i) { return i === marked ? cmul(z, e) : { re: z.re, im: z.im }; });
+  }
+
+  // D_φ = (1 − e^{iφ})|s><s| − I  (φ = π → 2|s><s| − I). |s><s| a = media(a) en cada sector.
+  function diffuserPhi(a, phi) {
+    var e = expi(phi), c = { re: 1 - e.re, im: -e.im }, mr = 0, mi = 0, i;
+    for (i = 0; i < N; i++) { mr += a[i].re; mi += a[i].im; }
+    var m = cmul(c, { re: mr / N, im: mi / N });
+    return a.map(function (z) { return { re: m.re - z.re, im: m.im - z.im }; });
+  }
+
+  // Ejecuta las piezas. `phis` (opcional): una fase por pieza, para el desplazamiento de parámetros.
+  function runPieces(pieces, target, o) {
+    var sigma = (o.phaseNoise || 0) * (pieces.indexOf('S') >= 0 ? 0.5 : 1);
+    var a = newState(), queries = 0, misreads = 0;
+    pieces.forEach(function (p, idx) {
+      var phi = o.phis ? o.phis[idx] : (o.phi === undefined ? PI : o.phi);
+      if (p === 'H') a = dephase(hadamard(a), sigma);
+      else if (p === 'M') {
+        var seen = perceive(target, o.sensorFlip || 0);
+        queries++;
+        if (seen !== target) misreads++;
+        a = dephase(oraclePhi(a, seen, phi), sigma);
+      } else if (p === 'D') a = dephase(diffuserPhi(a, phi), sigma);
+      // 'S' y 'C' no cambian el estado
+    });
+    return { amps: a, queries: queries, misreads: misreads };
+  }
+
+  function runCircuit(opts) {
+    var pieces = opts.pieces || [], target = opts.target;
+    var r = runPieces(pieces, target, opts);
+    // ideal: el mismo circuito sin ruido de circuito y con sensor perfecto
+    var ideal = probsOf(runPieces(pieces, target, { phi: opts.phi }).amps);
+    return {
+      amps: r.amps, probs: probsOf(r.amps), ideal: ideal, theory: ideal[target],
+      queries: r.queries, misreads: r.misreads
+    };
+  }
+
+  // Acierto medio sobre los 8 sectores (el objetivo del calibrador: no filtra dónde está el enemigo).
+  function meanSuccess(pieces, o) {
+    var tot = 0, t, n = o.phaseNoise ? 40 : 1, r;
+    for (t = 0; t < N; t++) for (r = 0; r < n; r++) tot += probsOf(runPieces(pieces, t, o).amps)[t];
+    return tot / (N * n);
+  }
+
+  // Valor y derivada d(acierto medio)/dφ con la regla de desplazamiento de parámetros.
+  // φ aparece en varias compuertas (M y D); cada una tiene generador de brecha 1, así que
+  // dP/dφ = Σ_j [P(φ_j + π/2) − P(φ_j − π/2)] / 2 desplazando una compuerta a la vez.
+  function gradient(opts) {
+    var pieces = opts.pieces, phi = opts.phi === undefined ? PI : opts.phi, noise = opts.phaseNoise || 0;
+    var base = pieces.map(function () { return phi; }), d = 0;
+    pieces.forEach(function (p, j) {
+      if (p !== 'M' && p !== 'D') return;
+      var up = base.slice(), dn = base.slice();
+      up[j] += PI / 2; dn[j] -= PI / 2;
+      d += (meanSuccess(pieces, { phis: up, phaseNoise: noise }) - meanSuccess(pieces, { phis: dn, phaseNoise: noise })) / 2;
+    });
+    return { value: meanSuccess(pieces, { phi: phi, phaseNoise: noise }), dphi: d };
+  }
+
+  // Fase de la búsqueda exacta con k iteraciones (Long, 2001): sin(π/(4J+6)) = sin β · sin(φ/2),
+  // con sin β = 1/√N y J = k − 1 (Long cuenta J + 1 iteraciones). Con ese φ el acierto es 100 %.
+  // Para N = 8: k=2 → 121,9° · k=3 → 78,0° · k=4 → 58,8°. Con k=1 no existe (el máximo es 78,1 % en φ=π).
+  function exactPhi(k) {
+    if (k < 2) return null;
+    var x = Math.sin(PI / (4 * (k - 1) + 6)) / Math.sin(THETA);
+    return x > 1 ? null : 2 * Math.asin(x);
+  }
+
   // Cañón clásico: k consultas "¿es el sector i?" a sectores distintos, en orden aleatorio.
   // Un "sí" (según la percepción del sensor) detiene la búsqueda y apunta a ese sector;
   // un "no" lo descarta y la probabilidad se reparte entre los que quedan.
@@ -145,43 +229,75 @@
   }
 
   // Texto Qiskit ejecutable del circuito del cañón (oráculo para el sector `target`, por defecto 5 = '101').
-  function toQiskit(k, target) {
+  // `piecesOrK`: un número k (circuito estándar H + k×[M, D]) o el array de piezas armado por el jugador
+  // (ej. ['H','M','D','M']); se exporta TAL CUAL, incluidas las configuraciones erróneas.
+  // `phi` (opcional, radianes): fase generalizada del marcador y el difusor; por defecto π (Grover estándar).
+  function toQiskit(piecesOrK, target, phi) {
     if (target === undefined) target = 5;
+    var isK = typeof piecesOrK === 'number', pieces, k;
+    if (isK) {
+      k = piecesOrK; pieces = ['H'];
+      for (var i = 0; i < k; i++) pieces.push('M', 'D');
+    } else { pieces = piecesOrK; k = pieces.filter(function (p) { return p === 'M'; }).length; }
+    var std = phi === undefined || phi === PI;
     var bits = target.toString(2).padStart(NQ, '0'); // bits[0] es q2 (little-endian)
     var zeros = [];
     for (var q = 0; q < NQ; q++) if (((target >> q) & 1) === 0) zeros.push(q);
     var xs = zeros.length ? '[' + zeros.join(', ') + ']' : null;
+    var phase = std ? 'qc.ccz(0, 1, 2)' : 'qc.mcp(' + phi.toFixed(6) + ', [0, 1], 2)';
 
     var L = [];
     L.push('# pip install qiskit qiskit-aer');
     L.push('from qiskit import QuantumCircuit, transpile');
     L.push('from qiskit_aer import AerSimulator');
     L.push('');
-    L.push('# Cañón cuántico de Collapse: 3 qubits = 8 sectores, k = ' + k + ' iteraciones.');
+    L.push('# Cañón cuántico de Collapse: 3 qubits = 8 sectores. Piezas: ' + (pieces.join(' ') || '(ninguna)') + '.');
     L.push("# Sector marcado: " + target + " ('" + bits + "', little-endian como Qiskit).");
+    if (!std) L.push('# Fase del marcador y el difusor: φ = ' + (phi * 180 / PI).toFixed(2) + '° (π = Grover estándar).');
     L.push('qc = QuantumCircuit(3, 3)');
-    L.push('qc.h([0, 1, 2])                 # superposición uniforme');
-    for (var it = 1; it <= k; it++) {
+    var n = 0;
+    pieces.forEach(function (p) {
+      n++;
       L.push('');
-      L.push('# --- iteración ' + it + ' ---');
-      L.push('# marcador (oráculo): invierte la fase del sector ' + target);
-      if (xs) L.push('qc.x(' + xs + ')');
-      L.push('qc.ccz(0, 1, 2)');
-      if (xs) L.push('qc.x(' + xs + ')');
-      L.push('# difusor: 2|s><s| - I');
-      L.push('qc.h([0, 1, 2])');
-      L.push('qc.x([0, 1, 2])');
-      L.push('qc.ccz(0, 1, 2)');
-      L.push('qc.x([0, 1, 2])');
-      L.push('qc.h([0, 1, 2])');
-    }
+      if (p === 'H') {
+        L.push('# [' + n + '] H: superposición uniforme');
+        L.push('qc.h([0, 1, 2])');
+      } else if (p === 'M') {
+        L.push('# [' + n + '] M, marcador (oráculo): ' + (std ? 'invierte la fase' : 'cambia la fase') + ' del sector ' + target);
+        if (xs) L.push('qc.x(' + xs + ')');
+        L.push(phase);
+        if (xs) L.push('qc.x(' + xs + ')');
+      } else if (p === 'D') {
+        L.push('# [' + n + '] D, difusor: ' + (std ? '2|s><s| - I' : '(1 - e^{iφ})|s><s| - I') + ' (salvo fase global)');
+        L.push('qc.h([0, 1, 2])');
+        L.push('qc.x([0, 1, 2])');
+        L.push(phase);
+        L.push('qc.x([0, 1, 2])');
+        L.push('qc.h([0, 1, 2])');
+      } else if (p === 'S') {
+        L.push('# [' + n + '] S, estabilizador: no cambia el estado (en el juego reduce el ruido a la mitad)');
+        L.push('qc.barrier()');
+      } else {
+        L.push('# [' + n + '] ' + p + ': pieza sin compuerta (solo la usa el juego)');
+      }
+    });
     L.push('');
     L.push('qc.measure([0, 1, 2], [0, 1, 2])   # medición = el disparo');
     L.push('');
     L.push('sim = AerSimulator()');
     L.push('counts = sim.run(transpile(qc, sim), shots=1024).result().get_counts()');
-    L.push('print(counts)   # ' + qiskitExpectation(k, bits));
+    L.push('print(counts)   # ' + (isK && std ? qiskitExpectation(k, bits) : circuitExpectation(pieces, target, bits, phi)));
     return L.join('\n');
+  }
+
+  // Qué debería salir al correr un circuito armado (puede ser una configuración errónea: se dice).
+  function circuitExpectation(pieces, target, bits, phi) {
+    var p = runCircuit({ pieces: pieces, target: target, phi: phi }).theory;
+    var msg = "la clave '" + bits + "' debería salir ~" + (100 * p).toFixed(1).replace('.', ',') + ' % de las veces (teoría de este circuito)';
+    if (pieces.indexOf('H') < 0) msg += '. Sin H no hay superposición: no se concentra amplitud';
+    else if (pieces.indexOf('M') >= 0 && pieces.indexOf('D') < 0) msg += '. Marcador sin difusor: las probabilidades no cambian';
+    else if (pieces.indexOf('D') >= 0 && pieces.indexOf('M') < 0) msg += '. Difusor sin marcador: no hay nada que amplificar';
+    return msg;
   }
 
   // ---------- autotest ----------
@@ -286,6 +402,54 @@
     }
     check('misreads: 0 sin ruido, = k con sensor siempre falso (cuántico)', mqOk && mcOk);
 
+    // 10c. Circuito armado con piezas (v3): igual al estándar, cuenta consultas y se ejecuta tal cual.
+    var stdP = ['H', 'M', 'D', 'M', 'D'];
+    var rc = runCircuit({ pieces: stdP, target: 3 });
+    check('runCircuit estándar = tabla 8.4 (k=2), queries = nº de M', Math.abs(rc.theory - expected[2]) < TOL && rc.queries === 2 &&
+      rc.ideal[3] === rc.theory, 'P = ' + (100 * rc.theory).toFixed(1) + '%, queries = ' + rc.queries);
+    var bad = [
+      ['H', 'M'], ['M', 'D', 'M', 'D'], ['H', 'D'], ['H', 'M', 'M', 'D']
+    ].map(function (p) { return runCircuit({ pieces: p, target: 3 }).theory; });
+    // H·M, H·D y H·M·M·D dejan el acierto en 12,5 % exacto. Sin H el difusor sí mezcla amplitudes desde |000>
+    // y sube apenas a 14,1 % (9/64): casi nada frente al 78-95 % de un circuito bien armado.
+    check('configuraciones erróneas no mejoran (H·M, H·D, M·M·D = 12,5 %; sin H ≈ 14,1 %)',
+      Math.abs(bad[0] - 0.125) < TOL && Math.abs(bad[2] - 0.125) < TOL && Math.abs(bad[3] - 0.125) < TOL &&
+      Math.abs(bad[1] - 9 / 64) < TOL, bad.map(function (x) { return (100 * x).toFixed(1) + '%'; }).join(' · '));
+    check('S no cambia el estado', Math.abs(runCircuit({ pieces: ['H', 'M', 'D', 'S'], target: 3 }).theory - expected[1]) < TOL);
+    var noS = 0, withS = 0, R = 600;
+    for (i = 0; i < R; i++) {
+      noS += runCircuit({ pieces: stdP, target: 3, phaseNoise: 0.4 }).probs[3];
+      withS += runCircuit({ pieces: stdP.concat('S'), target: 3, phaseNoise: 0.4 }).probs[3];
+    }
+    check('S reduce el ruido del circuito (acierto con S > sin S)', withS > noS, (100 * noS / R).toFixed(1) + '% → ' + (100 * withS / R).toFixed(1) + '%');
+
+    // Búsqueda exacta (Long): con φ ajustada el acierto llega a 100 %, incluso donde φ=π sobre-rota (k=3).
+    var exOk = true, exMsg = [];
+    [2, 3, 4].forEach(function (kk) {
+      var ph = exactPhi(kk), pp = ['H'];
+      for (var z = 0; z < kk; z++) pp.push('M', 'D');
+      for (t = 0; t < N; t++) exOk = exOk && Math.abs(runCircuit({ pieces: pp, target: t, phi: ph }).theory - 1) < 1e-9;
+      exMsg.push('k=' + kk + ' φ=' + (ph * 180 / Math.PI).toFixed(1) + '°');
+    });
+    check('búsqueda exacta: φ de Long da 100 % en los 8 sectores', exOk && exactPhi(1) === null, exMsg.join(' · '));
+
+    // Calibrador: la derivada por desplazamiento de parámetros coincide con diferencias finitas.
+    var gOk = true, gMsg = '';
+    [0.8, 1.5, 2.4].forEach(function (ph) {
+      var g = gradient({ pieces: stdP, phi: ph }), h = 1e-5;
+      var fd = (gradient({ pieces: stdP, phi: ph + h }).value - gradient({ pieces: stdP, phi: ph - h }).value) / (2 * h);
+      gOk = gOk && Math.abs(g.dphi - fd) < 1e-6;
+      gMsg = 'error máx vs. dif. finitas: ' + Math.abs(g.dphi - fd).toExponential(1);
+    });
+    check('gradient (desplazamiento de parámetros) = diferencias finitas', gOk, gMsg);
+    // Subir con el gradiente desde φ = π/2 llega al máximo (k=2 → φ ≈ 121,9°).
+    var phiT = 1.2;
+    for (i = 0; i < 80; i++) phiT += 1.5 * gradient({ pieces: stdP, phi: phiT }).dphi;
+    check('descenso de gradiente: el acierto medio sube a ~100 %', gradient({ pieces: stdP, phi: phiT }).value > 0.999,
+      'φ = ' + (phiT * 180 / Math.PI).toFixed(1) + '°, acierto medio = ' + (100 * gradient({ pieces: stdP, phi: phiT }).value).toFixed(2) + '%');
+    check('toQiskit(piezas): exporta tal cual y avisa de configs erróneas',
+      /Marcador sin difusor/.test(toQiskit(['H', 'M'], 5)) && /Sin H/.test(toQiskit(['M', 'D'], 5)) && /mcp\(/.test(toQiskit(stdP, 5, 1.2)));
+
     // 11. Fixtures de Qiskit (solo en Node: un navegador no puede leer archivos locales desde file://).
     // Se generan con: python qiskit/validate.py --json
     if (typeof require === 'function' && typeof __dirname !== 'undefined') {
@@ -301,6 +465,13 @@
           n++;
         });
         check('coincide con Qiskit Statevector (' + n + ' casos, 8 sectores)', fxErr < TOL, 'error máx = ' + fxErr.toExponential(2));
+        var cx = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'qiskit', 'fixtures', 'circuit_cases.json'), 'utf8'));
+        var cxErr = 0;
+        cx.forEach(function (c) {
+          var p = runCircuit({ pieces: c.pieces, target: c.target, phi: c.phi }).probs;
+          for (var s = 0; s < N; s++) cxErr = Math.max(cxErr, Math.abs(p[s] - c.probs[s]));
+        });
+        check('circuitos armados y φ de Long coinciden con Qiskit (' + cx.length + ' casos)', cxErr < TOL, 'error máx = ' + cxErr.toExponential(2));
       } catch (e) {
         console.log('%cOMITIDA comparación con fixtures de Qiskit (' + e.message + ')', 'color:#f39c12');
       }
@@ -322,7 +493,10 @@
     runClassical: runClassical,
     sample: sample,
     toQiskit: toQiskit,
-    selfTest: selfTest
+    selfTest: selfTest,
+    runCircuit: runCircuit,
+    gradient: gradient,
+    exactPhi: exactPhi
   };
 
   root.Quantum = Quantum;
