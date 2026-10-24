@@ -1,14 +1,15 @@
 // Collapse: motor de juego (Lucas).
-// Solo habla con los demás módulos a través de window.Quantum y window.UI (contrato en TAREAS.md).
+// Solo habla con los demás módulos a través de window.Quantum, window.UI y window.Content (contrato en TAREAS.md).
 (function () {
   'use strict';
 
   const SECTORS = 8;
   const SECTOR_ANGLE = (Math.PI * 2) / SECTORS;
+  const RECORD_KEY = 'collapse.record';
 
   const config = {
     world: { w: 2000, h: 1300 },
-    bots: 5,
+    bots: 6,
     playerSpeed: 230,
     botSpeed: 110,
     bulletSpeed: 620,
@@ -24,11 +25,22 @@
     costPerQuery: 20,      // igual para una consulta clásica que para una iteración cuántica
     slowmoDuration: 1.1,   // segundos reales que se muestran las barras antes del tiro
     slowmoScale: 0.12,
-    phaseNoise: 0,         // ruido del circuito (solo cuántico)
-    sensorFlip: 0,         // ruido del sensor (afecta a ambos)
+    phaseNoise: 0.15,      // ruido del circuito (solo cuántico). Provisional hasta el perfil de Qiskit Aer
+    sensorFlip: 0,         // ruido del sensor en niebla normal (afecta a ambos)
+    stormSensorFlip: 0.25, // ruido del sensor dentro de la tormenta (afecta a ambos)
+    botSearchCooldown: 3.5,
+    botSearchDamage: 10,
   };
 
-  const Game = { config, log: [], history: [], state: null, start };
+  // Arquetipos de bots (sección 8.8): cómo buscan al jugador cuando se esconde en la niebla.
+  const ARCHETYPES = {
+    clasico: { label: 'clásico', cannon: 'classic', k: 2 },
+    cuantico: { label: 'cuántico', cannon: 'quantum', k: 2 },
+    ansioso: { label: 'ansioso', cannon: 'quantum', k: 3 },
+  };
+  const ARCH_ORDER = ['clasico', 'cuantico', 'ansioso'];
+
+  const Game = { config, log: [], history: [], state: null, record: loadRecord(), start };
   window.Game = Game;
 
   let canvas, ctx;
@@ -39,6 +51,11 @@
   let inputBound = false;
   const keys = {};
   const mouse = { x: 0, y: 0, down: false };
+
+  // Pistas: cada una se muestra una sola vez por sesión (no se reinicia al jugar otra vez).
+  const seenHints = new Set();
+  const hintQueue = [];
+  let hintCur = null;
 
   // ---------- utilidades ----------
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -51,8 +68,24 @@
     return Math.floor(a / SECTOR_ANGLE) % SECTORS;
   }
 
+  // 'tormenta' | 'niebla' | null
+  function zoneOf(p) {
+    let zone = null;
+    for (const f of world.fog) {
+      if (Math.hypot(p.x - f.x, p.y - f.y) < f.r) {
+        if (f.storm) return 'tormenta';
+        zone = 'niebla';
+      }
+    }
+    return zone;
+  }
+
   function inFog(p) {
-    return world.fog.some((f) => Math.hypot(p.x - f.x, p.y - f.y) < f.r);
+    return zoneOf(p) !== null;
+  }
+
+  function sensorFlipAt(p) {
+    return zoneOf(p) === 'tormenta' ? config.stormSensorFlip : config.sensorFlip;
   }
 
   function say(text) {
@@ -60,11 +93,32 @@
     world.msgT = 1.8;
   }
 
+  function hint(key) {
+    if (seenHints.has(key)) return;
+    const C = window.Content;
+    const text = C && C.hints && C.hints[key];
+    if (!text) return;
+    seenHints.add(key);
+    hintQueue.push(String(text));
+  }
+
+  function loadRecord() {
+    try {
+      const r = JSON.parse(localStorage.getItem(RECORD_KEY));
+      if (r && typeof r.kills === 'number') return r;
+    } catch (e) { /* sin almacenamiento: récord solo en memoria */ }
+    return { kills: 0, quantumAcc: null };
+  }
+
+  function saveRecord(r) {
+    try { localStorage.setItem(RECORD_KEY, JSON.stringify(r)); } catch (e) { /* ignorar */ }
+  }
+
   // ---------- mundo ----------
-  function makeTank(x, y, isPlayer) {
+  function makeTank(x, y, isPlayer, arch) {
     return {
-      x, y, r: 18, hp: 100, angle: 0, isPlayer, alive: true,
-      fireCd: rand(0, 1), wp: null, wait: 0, revealed: 0, flash: 0,
+      x, y, r: 18, hp: 100, angle: 0, isPlayer, alive: true, arch,
+      fireCd: rand(0, 1), searchCd: rand(1, config.botSearchCooldown), wp: null, wait: 0, revealed: 0, flash: 0,
       color: isPlayer ? '#4fc3f7' : '#ff7a59',
     };
   }
@@ -88,21 +142,22 @@
     const W = config.world.w, H = config.world.h;
     const fog = [
       { x: W * 0.28, y: H * 0.35, r: 220 },
-      { x: W * 0.72, y: H * 0.58, r: 260 },
+      { x: W * 0.72, y: H * 0.58, r: 260, storm: true },
       { x: W * 0.52, y: H * 0.16, r: 160 },
       { x: W * 0.18, y: H * 0.8, r: 150 },
     ];
-    const player = makeTank(W / 2, H * 0.82, true);
+    const player = makeTank(W / 2, H * 0.82, true, null);
     const bots = [];
     for (let i = 0; i < config.bots; i++) {
       const p = randomPoint(player, 450);
-      bots.push(makeTank(p.x, p.y, false));
+      bots.push(makeTank(p.x, p.y, false, ARCH_ORDER[i % ARCH_ORDER.length]));
     }
     return {
       fog, player, bots,
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
-      search: null, lastResult: null,
+      search: null, lastResult: null, radarBot: null,
+      kills: 0,
       time: 0, shake: 0, msg: '', msgT: 0,
       over: false, endT: 0,
     };
@@ -130,7 +185,7 @@
     }
   }
 
-  function damage(t, dmg) {
+  function damage(t, dmg, by) {
     if (!t.alive) return;
     t.hp -= dmg;
     t.flash = 0.12;
@@ -138,6 +193,7 @@
       t.alive = false;
       burst(t.x, t.y, t.color, 26);
       if (t.isPlayer) say('Te eliminaron');
+      else if (by === world.player) world.kills++;
       world.shake = Math.max(world.shake, 10);
     }
   }
@@ -154,21 +210,31 @@
     return best;
   }
 
+  function runSearch(cannon, k, target, sensorFlip) {
+    const Q = window.Quantum;
+    return cannon === 'quantum'
+      ? Q.runQuantum({ k, target, phaseNoise: config.phaseNoise, sensorFlip })
+      : Q.runClassical({ k, target, sensorFlip });
+  }
+
   function trySearch() {
     const w = world;
     if (!w || w.search || w.over || !w.player.alive) return;
-    const bot = radarTarget();
+    const bot = w.radarBot;
     if (!bot) return say('El radar no detecta a nadie en la niebla');
     const cost = w.k * config.costPerQuery;
     if (w.energy < cost) return say('Energía insuficiente para k = ' + w.k);
     w.energy -= cost;
 
     const target = sectorOf(w.player, bot);
-    const Q = window.Quantum;
-    const result = w.cannon === 'quantum'
-      ? Q.runQuantum({ k: w.k, target, phaseNoise: config.phaseNoise, sensorFlip: config.sensorFlip })
-      : Q.runClassical({ k: w.k, target, sensorFlip: config.sensorFlip });
-    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: w.k };
+    const zone = zoneOf(bot);
+    const sensorFlip = sensorFlipAt(bot);
+    const result = runSearch(w.cannon, w.k, target, sensorFlip);
+    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: w.k, zone, sensorFlip };
+
+    if (w.cannon === 'quantum') hint('primerCuantico');
+    if (w.k === 0) hint('kCero');
+    if (zone === 'tormenta') hint('tormenta');
   }
 
   function resolveSearch() {
@@ -176,22 +242,51 @@
     w.search = null;
     const shot = window.Quantum.sample(s.result.probs);
     const hit = shot === s.target;
-    const entry = { cannon: s.cannon, k: s.k, target: s.target, shot, hit, theory: s.result.theory, t: +w.time.toFixed(2) };
+    const entry = {
+      cannon: s.cannon, k: s.k, target: s.target, shot, hit, theory: s.result.theory, t: +w.time.toFixed(2),
+      zone: s.zone, sensorFlip: s.sensorFlip,
+      phaseNoise: s.cannon === 'quantum' ? config.phaseNoise : 0,
+      misreads: s.result.misreads || 0,
+    };
     Game.log.push(entry);
     Game.history.push(entry);
 
     const ang = hit ? Math.atan2(s.bot.y - p.y, s.bot.x - p.x) : (shot + 0.5) * SECTOR_ANGLE;
-    w.tracers.push({ x: p.x, y: p.y, ang, len: hit ? dist(p, s.bot) : config.radarRange, life: 0.4, hit });
+    w.tracers.push({ x: p.x, y: p.y, ang, len: hit ? dist(p, s.bot) : config.radarRange, life: 0.4, color: hit ? '255,224,102' : '255,255,255' });
     w.lastResult = { result: s.result, cannon: s.cannon, life: 0.7 };
 
     if (hit) {
-      damage(s.bot, config.searchDamage);
+      damage(s.bot, config.searchDamage, p);
       s.bot.revealed = 1.2;
       burst(s.bot.x, s.bot.y, '#ffe066', 14);
       w.shake = Math.max(w.shake, 7);
       say('¡Acierto! Sector ' + shot);
     } else {
       say('Fallo: disparaste al sector ' + shot + ', estaba en el ' + s.target);
+    }
+
+    if (s.cannon === 'quantum') {
+      if (hit && s.k >= 1) hint('aciertoCuantico');
+      if (!hit && s.k === 3) hint('sobreRotacion');
+      if (!hit && s.k === 2) hint('ruidoCircuito');
+    }
+  }
+
+  // Un bot busca al jugador escondido en la niebla con el cañón de su arquetipo.
+  function botSearch(b) {
+    const w = world, p = w.player;
+    const a = ARCHETYPES[b.arch];
+    const target = sectorOf(b, p);
+    const result = runSearch(a.cannon, a.k, target, sensorFlipAt(p));
+    const shot = window.Quantum.sample(result.probs);
+    const hit = shot === target;
+    const ang = hit ? Math.atan2(p.y - b.y, p.x - b.x) : (shot + 0.5) * SECTOR_ANGLE;
+    w.tracers.push({ x: b.x, y: b.y, ang, len: hit ? dist(b, p) : config.radarRange, life: 0.35, color: '255,122,89' });
+    b.revealed = Math.max(b.revealed, 0.5);
+    b.searchCd = config.botSearchCooldown + rand(0, 1);
+    if (hit) {
+      damage(p, config.botSearchDamage, b);
+      say('Un bot ' + a.label + ' te encontró en la niebla (k = ' + a.k + ')');
     }
   }
 
@@ -225,12 +320,17 @@
   }
 
   function updateBots(dt) {
+    const p = world.player;
+    const playerHidden = p.alive && inFog(p);
     for (const b of world.bots) {
       if (!b.alive) continue;
       b.fireCd -= dt;
+      b.searchCd -= dt;
       b.revealed -= dt;
       const hidden = inFog(b);
       const enemy = nearestVisibleEnemy(b);
+
+      if (playerHidden && b.searchCd <= 0 && dist(b, p) <= config.radarRange) botSearch(b);
 
       if (enemy && !hidden) {
         // Pelea: mantener distancia y orbitar mientras dispara.
@@ -274,7 +374,7 @@
       for (const t of list) {
         if (t === u.owner || !t.alive) continue;
         if (Math.hypot(u.x - t.x, u.y - t.y) < t.r + 4) {
-          damage(t, u.dmg);
+          damage(t, u.dmg, u.owner);
           if (!t.isPlayer) t.revealed = Math.max(t.revealed, 0.4);
           burst(u.x, u.y, '#ffffff', 4);
           return false;
@@ -294,6 +394,22 @@
     for (const t of tanks()) t.flash -= dtReal;
     world.shake = Math.max(0, world.shake - 40 * dtReal);
     world.msgT -= dtReal;
+    if (hintCur && (hintCur.t -= dtReal) <= 0) hintCur = null;
+    if (!hintCur && hintQueue.length) hintCur = { text: hintQueue.shift(), t: 4.5 };
+  }
+
+  // Récord personal: bots eliminados y % de acierto cuántico (k ≥ 1, mínimo 5 disparos).
+  function updateRecord() {
+    const r = Game.record, w = world;
+    const q = Game.log.filter((e) => e.cannon === 'quantum' && e.k >= 1);
+    const acc = q.length >= 5 ? q.filter((e) => e.hit).length / q.length : null;
+    const news = [];
+    if (w.kills > r.kills) { r.kills = w.kills; news.push(w.kills + ' bots'); }
+    if (acc !== null && (r.quantumAcc === null || acc > r.quantumAcc)) {
+      r.quantumAcc = acc;
+      news.push(Math.round(acc * 100) + '% de acierto cuántico');
+    }
+    if (news.length) { saveRecord(r); say('¡Nuevo récord! ' + news.join(' · ')); }
   }
 
   function checkEnd(dtReal) {
@@ -302,8 +418,9 @@
       const botsLeft = w.bots.filter((b) => b.alive).length;
       if (!w.player.alive || botsLeft === 0) {
         w.over = true;
-        w.endT = 1.3;
+        w.endT = 1.6;
         if (w.player.alive) say('¡Último en pie!');
+        updateRecord();
       }
       return;
     }
@@ -311,7 +428,7 @@
     if (w.endT <= 0) {
       running = false;
       mouse.down = false;
-      if (window.UI && UI.showEnd) UI.showEnd(Game.log, start);
+      if (window.UI && UI.showEnd) UI.showEnd(Game.log, start, Game.history);
     }
   }
 
@@ -328,6 +445,8 @@
     updatePlayer(dt);
     updateBots(dt);
     updateBullets(dt);
+    w.radarBot = w.player.alive ? radarTarget() : null;
+    if (w.radarBot) hint('primeraBusqueda');
     updateEffects(dt, dtReal);
     checkEnd(dtReal);
   }
@@ -350,10 +469,20 @@
   }
 
   function drawTank(t) {
+    const quantumLook = t.isPlayer && world.cannon === 'quantum';
+    if (quantumLook) {
+      // Halo pulsante: el tanque "se vuelve cuántico".
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r + 7 + pulse * 4, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(179,136,255,' + (0.35 + pulse * 0.4) + ')';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate(t.angle);
-    ctx.fillStyle = '#8a93a6';
+    ctx.fillStyle = quantumLook ? '#b388ff' : '#8a93a6';
     ctx.strokeStyle = '#5b6375';
     ctx.lineWidth = 3;
     ctx.fillRect(t.r * 0.3, -6, t.r * 1.2, 12);
@@ -361,7 +490,7 @@
     ctx.restore();
     ctx.beginPath();
     ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
-    ctx.fillStyle = t.flash > 0 ? '#ffffff' : t.color;
+    ctx.fillStyle = t.flash > 0 ? '#ffffff' : quantumLook ? '#9f7aea' : t.color;
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
@@ -371,6 +500,11 @@
       ctx.fillRect(t.x - 20, t.y - t.r - 12, 40, 5);
       ctx.fillStyle = '#7bd88f';
       ctx.fillRect(t.x - 20, t.y - t.r - 12, 40 * Math.max(0, t.hp) / 100, 5);
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(232,236,244,0.75)';
+      ctx.fillText(ARCHETYPES[t.arch].label, t.x, t.y - t.r - 17);
+      ctx.textAlign = 'left';
     }
   }
 
@@ -412,19 +546,27 @@
     }
     ctx.globalAlpha = 1;
 
-    // Niebla (encima de todo lo del mundo)
+    // Niebla y tormenta (encima de todo lo del mundo)
     for (const f of world.fog) {
+      const rgb = f.storm ? '190,120,200' : '150,160,185';
       const g = ctx.createRadialGradient(f.x, f.y, f.r * 0.55, f.x, f.y, f.r);
-      g.addColorStop(0, 'rgba(150,160,185,0.55)');
-      g.addColorStop(1, 'rgba(150,160,185,0)');
+      g.addColorStop(0, 'rgba(' + rgb + ',0.55)');
+      g.addColorStop(1, 'rgba(' + rgb + ',0)');
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
       ctx.fill();
+      if (f.storm) {
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,230,255,0.85)';
+        ctx.fillText('TORMENTA · sensor poco fiable', f.x, f.y - f.r * 0.6);
+        ctx.textAlign = 'left';
+      }
     }
 
     for (const t of world.tracers) {
-      ctx.strokeStyle = t.hit ? 'rgba(255,224,102,' + t.life * 2.5 + ')' : 'rgba(255,255,255,' + t.life * 2 + ')';
+      ctx.strokeStyle = 'rgba(' + t.color + ',' + Math.min(1, t.life * 2.5) + ')';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(t.x, t.y);
@@ -433,7 +575,7 @@
     }
 
     // Radar: anillo de alcance y división en 8 sectores
-    if (p.alive && radarTarget()) {
+    if (world.radarBot) {
       ctx.save();
       ctx.strokeStyle = 'rgba(255,224,102,0.35)';
       ctx.setLineDash([8, 8]);
@@ -459,13 +601,63 @@
       energy: w.energy,
       cannon: w.cannon,
       k: w.k,
-      radar: !!(w.player.alive && radarTarget()),
+      radar: !!w.radarBot,
       hp: Math.max(0, w.player.hp),
       botsLeft: w.bots.filter((b) => b.alive).length,
       cost: w.k * config.costPerQuery,
       costPerQuery: config.costPerQuery,
       searching: !!w.search,
+      radarZone: w.radarBot ? zoneOf(w.radarBot) : null,
+      kills: w.kills,
+      record: Game.record,
     };
+  }
+
+  function wrapText(text, maxW) {
+    const words = text.split(' '), lines = [];
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = word; } else line = test;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function drawOverlayText(v) {
+    // Récord y bajas (arriba a la derecha; el HUD de UI va arriba a la izquierda)
+    const r = Game.record;
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(232,236,244,0.8)';
+    ctx.fillText('Bajas: ' + world.kills, v.w - 16, 24);
+    ctx.fillText('Récord: ' + r.kills + ' bots' + (r.quantumAcc !== null ? ' · ' + Math.round(r.quantumAcc * 100) + '% cuántico' : ''), v.w - 16, 42);
+
+    if (world.msgT > 0) {
+      ctx.globalAlpha = Math.min(1, world.msgT * 2);
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(world.msg, v.w / 2, v.h - 40);
+      ctx.globalAlpha = 1;
+    }
+
+    if (hintCur) {
+      ctx.font = '15px system-ui, sans-serif';
+      const lines = wrapText(hintCur.text, Math.min(560, v.w - 64));
+      const lh = 20, boxW = Math.min(600, v.w - 32), boxH = lines.length * lh + 20;
+      const bx = (v.w - boxW) / 2, by = 64;
+      ctx.globalAlpha = Math.min(1, hintCur.t * 2);
+      ctx.fillStyle = 'rgba(14,18,32,0.88)';
+      ctx.fillRect(bx, by, boxW, boxH);
+      ctx.fillStyle = '#ffd166';
+      ctx.fillRect(bx, by, 4, boxH);
+      ctx.fillStyle = '#e8ecf4';
+      ctx.textAlign = 'center';
+      lines.forEach((l, i) => ctx.fillText(l, v.w / 2, by + 24 + i * lh));
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = 'left';
   }
 
   function render() {
@@ -489,16 +681,7 @@
       else if (world.lastResult) UIm.drawSectors(ctx, px, py, world.lastResult.result, world.lastResult.cannon);
     }
     if (UIm && UIm.drawHUD) UIm.drawHUD(ctx, hudState());
-
-    if (world.msgT > 0) {
-      ctx.globalAlpha = Math.min(1, world.msgT * 2);
-      ctx.font = 'bold 18px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(world.msg, v.w / 2, v.h - 40);
-      ctx.textAlign = 'left';
-      ctx.globalAlpha = 1;
-    }
+    drawOverlayText(v);
   }
 
   // ---------- input y loop ----------
@@ -552,6 +735,8 @@
     world = newWorld();
     Game.state = world;
     Game.log = [];
+    hintQueue.length = 0;
+    hintCur = null;
     mouse.down = false;
     if (!running) {
       running = true;
