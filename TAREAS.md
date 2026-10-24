@@ -6,6 +6,64 @@
 > **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
 > Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
 
+## Fase 3: estado al 15:35
+
+| Parte | Responsable | Estado |
+|---|---|---|
+| `runCircuit`, `gradient`, `exactPhi`, `toQiskit(pieces, target, phi)` | Avix | **En `main`** (PR #24) |
+| Correcciones de la mecánica 0/1/H | Lucas | **En `main`** (PR #25) |
+| 1. Loot de piezas | Lucas | Rama `feat/loot-piezas` |
+| 2. Colección de conceptos | Lucas | Rama `feat/coleccion` (sale de la 1) |
+| 3. Ruta de aprendizaje | Lucas | Rama `feat/ruta-aprendizaje` (sale de la 2) |
+| 4. Calibrador | Lucas | Rama `feat/calibrador` (sale de la 3) |
+| Barra del circuito, pantalla de colección, botón de la ruta, fin de ronda, curva del calibrador | Gandy | Pendiente (ver abajo) |
+| Textos de piezas, logros, rondas, pistas nuevas y tarjeta `calibracion` | Alvaro | Pendiente (ver abajo) |
+
+Las ramas de Lucas están **en cadena**: se mergean en orden 1 → 2 → 3 → 4, o con un solo PR desde `feat/calibrador`. Mientras falten las partes de Gandy y Alvaro, el juego usa textos y dibujos de respaldo, así que **nada se rompe**.
+
+**Verificado sin navegador**, con el simulador de Avix:
+- **Circuitos:** `[H][M]` 13 %, `[M][D]` 6 %, `[H][M][D]` 74 %, 2 pares 90 %, 3 pares 33 % y 2 pares con S 94 %. Cada M cuesta lo mismo que una consulta clásica.
+- **Logros:** los 9 se desbloquean en su situación y se guardan entre partidas.
+- **Ruta:** las 4 rondas de punta a punta, con el progreso guardado y la configuración del battle royale restaurada al terminar.
+- **Calibrador:** con 3 iteraciones, φ pasa de 163° a 78° en 5 disparos y el acierto sube de 40 % a 95 %.
+- **Lo que no cambia:** `?demo` sigue con k libre y sin piezas.
+
+### Lo que necesita Gandy (`js/ui.js`). Todo es opcional: si no existe, Game dibuja un respaldo
+```js
+UI.drawCircuit(ctx, state)          // state.circuit (['H','M','D',…]), circuitMax, circuitMode. Recordar: R suelta la última
+UI.drawCalibration(ctx, { phi, curve }) // φ en radianes y acierto medio por paso de entrenamiento (0..1)
+UI.showRoundEnd(info, onNext)       // info = { round, total, titulo, card, passed, log }. onNext pasa a la siguiente ronda o repite
+```
+- Pantalla de inicio: botón **"Ruta de aprendizaje"** que llame a `Game.startRoute(Game.routeProgress + 1)` (o 1). Si `Game.routeProgress === Game.ROUTE_LENGTH`, la ruta está completa.
+- Pantalla de colección: `Game.ACHIEVEMENTS` (ids), `Game.collection.unlocked[id]` y los títulos de `Content.achievements[id].titulo`. El HUD ya recibe `concepts` y `conceptsTotal`.
+- Pantalla final:
+  - el bloque de Qiskit tiene que usar **el circuito armado**: `Quantum.toQiskit(entry.circuit.split(''), 5, entry.phi * Math.PI / 180)` con la última entrada cuántica del log;
+  - el log ahora trae `circuit` (ej. `"HMDMDS"`) y `phi` (grados o `null`).
+- Botón táctil para `R` (soltar pieza).
+- Textos de controles: además de lo de la sección "Controles sin mouse", agregar `R` (soltar la última pieza del circuito).
+
+### Lo que necesita Alvaro (`js/content.js`)
+```js
+Content.pieces = { H, M, D, S, C }      // { nombre, intuitivo, profundo }; nombre aparece en "Recogiste …"
+Content.achievements = { probCondicional, amplitudNegativa, marcadorSolo, interferencia, sobreRotacion,
+                         tormentaEngana, decoherencia, grandesNumeros, calibracion }  // { titulo, cuando, card }
+Content.rounds = [{ titulo, objetivo, card } ×4]   // Niebla, Amplitudes, Sobre-rotación, Ruido
+Content.hints += { primeraPieza, marcadorSolo, sinSuperposicion, calibrador }
+Content.cards.calibracion                          // qué es real (búsqueda exacta con fases) y qué es simplificación
+```
+`pickCard(log)` puede usar los campos nuevos del log, `circuit` y `phi`.
+
+### Nota para Alvaro sobre la mecánica 0/1/H (ya en `main`)
+Se mantuvo y se corrigieron 4 errores:
+- las bajas no se contaban;
+- la bala 0 curaba a los enemigos (ahora la curación es siempre para quien disparó);
+- había mensajes por cada impacto que tapaban los resultados de las búsquedas;
+- se había roto el CSS de la guía "Cómo jugar".
+
+La zona del piso se muestra ahora como **"≈ zona inestable"** para no confundirla con la pieza **H** del circuito.
+
+Queda un punto para revisar juntos: las probabilidades de curar o dañar (`0.68` / `0.42` / `0.26` / `0.88`) están escritas a mano. El pilar 4 del brief pide que salgan del simulador, y la sección 7 advierte contra presentar la superposición como "un resultado al azar". Una opción es tratar la bala como un qubit: la zona aplica H de verdad y el impacto **mide** con `Quantum.sample`. Así la cara 50/50 es real, y dos zonas seguidas (H·H = I) la devuelven a su estado original, que es justo la idea de interferencia.
+
 ## Fase 3: progresión del cañón y aprendizaje (después de la demo)
 
 **Problema:** hoy el cañón no mejora. El cuántico está disponible desde el inicio con k libre (Q/E), y el aprendizaje solo llega por las pistas y las tarjetas finales. El brief (sección 8.4) pide que **el cañón se arme con piezas de circuito encontradas como loot**, de modo que armarlo *sea* el concepto.
@@ -66,7 +124,8 @@ En la ronda 2, el jugador **vive** "el marcador solo no cambia nada" antes de qu
 
 ### Parte 4: Calibrador, el puente con QML (sección 8.11)
 - Ajusta **una fase φ** compartida por el marcador y el difusor con **descenso de gradiente**, usando la regla de desplazamiento de parámetros. Da un paso por disparo y dibuja la curva de acierto contra el paso de entrenamiento.
-- **Física real:** es la búsqueda exacta con fases ajustadas (Long, 2001). Para N = 8, con 2 iteraciones, φ ≈ 78° da **100 %** (contra 94,5 %). Con 3 iteraciones, φ ≈ 59° **corrige la sobre-rotación** (de 33 % a 100 %). **Validar con Qiskit antes de afirmarlo en el pitch.**
+- **Física real:** es la búsqueda exacta con fases ajustadas (Long, 2001). Para N = 8, con 2 iteraciones, **φ ≈ 122°** da **100 %** (contra 94,5 %); con 3 iteraciones, **φ ≈ 78°** **corrige la sobre-rotación** (de 33 % a 100 %). *(Corregido: una versión anterior de este plan decía 78° y 59°, y estaba mal. Los valores correctos los calcula `Quantum.exactPhi` y coinciden con un barrido numérico.)*
+- φ = π (Grover estándar) es un **punto estacionario** (gradiente cero): el calibrador arranca un poco corrido (π − 0,3).
 - El objetivo de entrenamiento es el acierto promedio sobre los 8 sectores: **no filtra dónde está el enemigo**.
 - Cómo decirlo: "entrenar un circuito parametrizado". Nunca "el juego usa IA".
 
