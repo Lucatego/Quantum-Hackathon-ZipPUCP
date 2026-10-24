@@ -6,6 +6,67 @@
 > **Actualización 13:50:** la fase 1 (motor, simulador, UI) ya está en `main`. Abajo están el estado y las tareas de la **fase 2: contenidos**. La división original de la fase 1 se mantiene más abajo como referencia.
 > Para **jugar o entender cómo encaja cada pieza**, ver [`docs/GUIA.md`](docs/GUIA.md) (Gandy). Este archivo es el plan de trabajo; la guía es el manual.
 
+## Estado al 14:10 y tareas finales (freeze 14:35)
+
+**El juego está completo e integrado en `main`.** Pruebas sobre `origin/main`:
+- `selfTest` en verde, incluida la comparación con los fixtures de Qiskit;
+- UI: 34 de 34 pruebas;
+- `check-contract`: OK, sin pendientes;
+- `check-content`: OK;
+- prueba de punta a punta con los 4 módulos (pistas, tarjeta final y código Qiskit).
+
+| Pieza | Estado |
+|---|---|
+| Motor, tormenta, ruido, pistas, récord, bots con arquetipos (Lucas) | Listo |
+| Simulador, `misreads`, perfil de ruido IBM, Colab (Avix) | Listo |
+| UI + guía "Cómo jugar" dentro del juego (Gandy) | Listo, con 1 frase a corregir |
+| `content.js`: tarjetas, pistas, `pickCard`, auditor del checklist (Alvaro) | Listo y correcto |
+| Pitch (Alvaro) | **Borrador: falta el centro** (ver abajo) |
+| UI fase 2: leyenda, modo profundización, pantalla final con ruido | **No hecho.** El ruido se registra, pero el jugador no lo ve |
+| σ del ruido del circuito | **Falta decidir:** 0,15 (actual, k=2 ≈ 90 %) o 0,46 (calibrado, k=2 ≈ 60 %) |
+| `docs/GUIA.md` | Desactualizada (contrato v1, §7) |
+| Prueba en navegador y celular real | **Nadie la ha hecho todavía** |
+
+### Problemas a corregir antes del freeze
+1. **El juego se contradice sobre la "ventaja cuántica".**
+   - `js/ui.js:245` (última diapositiva de "Cómo jugar") dice "ni una ventaja cuántica real".
+   - La tarjeta `interferencia` de `content.js` dice, correctamente, que la ventaja en consultas está demostrada para la búsqueda no estructurada idealizada.
+   - `docs/GUIA.md:79` dice que el clásico "no es el mejor algoritmo posible", y `probClasica` dice lo contrario, que es lo correcto.
+   - Usar la misma frase en los tres lugares: *"Es una simulación didáctica de 3 qubits. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada, pero con 8 sectores esto no demuestra una ventaja práctica."*
+2. **El pitch no cuenta qué hace el juego.** El borrador tiene un buen gancho y un buen cierre, pero:
+   - Habla de "aprender inteligencia artificial / Quantum Machine Learning", y el prototipo **no tiene ML**: enseña **probabilidad clásica (muestreo, probabilidad condicional) vs. amplitudes e interferencia (Grover)**. El reto pide justo eso, "un concepto de Estadística/ML y su equivalente cuántico", y hay que decirlo con esas palabras. El QML va como **visión** (auto-calibración por descenso de gradiente = entrenamiento de un circuito variacional), no como algo que ya hace.
+   - No menciona tanques, niebla, los 8 sectores, la comparación justa, la tabla 8.4, la demo, la validación con Qiskit, el ruido calibrado ni las limitaciones. Sin eso, suena genérico (riesgo "AI slop" del brief).
+   - Se subió directo a `main`, con un mensaje fuera de estilo y sin extensión `.md`. No rompe nada; para la próxima, usar `feat/pitch`.
+
+### Tareas hasta el freeze (14:10 → 14:35)
+**ALVARO (pitch, prioridad 1):** pasarlo a `pitch/PITCH.md` y armarlo para 3 minutos. Se conservan su apertura y su cierre:
+
+| Tiempo | Bloque | Qué decir |
+|---|---|---|
+| 0:00–0:20 | Gancho | Su apertura, cambiando "IA" por "probabilidad y computación cuántica" |
+| 0:20–0:45 | El reto, en sus términos | "Tomamos **probabilidad clásica** (muestreo y descarte) y mostramos su equivalente cuántico: **amplitudes que interfieren** (Grover)". Tabla de la sección 3 |
+| 0:45–1:45 | **Demo en vivo** (Lucas juega) | Radar → clásico con k=2 (37,5 %) → cuántico con k=2 (~95 %) → cuántico con k=3 que falla (33 %) → tormenta → pantalla final con tarjeta y Qiskit |
+| 1:45–2:15 | Rigor | "La física está verificada contra Qiskit (error de 1e-15)". "El ruido del circuito es un modelo de un parámetro ajustado al perfil de un procesador IBM simulado". Dato fuerte: con ese ruido, el k óptimo baja de 2 a 1 |
+| 2:15–2:40 | Honestidad y visión | Comparación justa y sus límites (oráculo como abstracción, 8 sectores no demuestran ventaja práctica). Visión: BR completo, auto-calibración con gradiente (puente con QML), 4 qubits, hardware real |
+| 2:40–3:00 | Cierre | "Aprendes probabilidad cuántica porque te sirve para ganar" + su frase final + QR |
+
+**GANDY:**
+1. (5 min) Corregir `ui.js:245` y `GUIA.md` §7 con la frase de arriba.
+2. (15 min, si da) Bloque de ruido en la pantalla final: búsquedas en tormenta, cuántas con `misreads > 0` y el acumulado de `history`.
+3. Probar en el celular con el QR.
+
+**LUCAS:**
+1. Aplicar el σ que decida el equipo en `config.phaseNoise`.
+2. **Jugar en el navegador real** (Pages) y ajustar el balance (daño de los bots buscadores, energía).
+3. Ensayar la ruta de la demo de 60 s del guion y mantener abierta una pestaña de respaldo.
+
+**AVIX:**
+1. Revisar que las afirmaciones técnicas del pitch sean correctas.
+2. Dejar lista una slide con la tabla 8.4 junto a la curva Aer/FakeSherbrooke.
+3. Dejar la celda de Colab abierta para correr el código exportado en vivo, si hay tiempo.
+
+**14:35:** freeze, merge de los PRs, prueba de humo en Pages y celular. **14:45:** ensayo completo con el cronómetro.
+
 ## Estado al 13:45
 
 | Pieza | Responsable | Estado |
