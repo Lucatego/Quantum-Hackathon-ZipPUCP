@@ -166,4 +166,22 @@
     assertEq(Intro3D.nextQuality(1, 16), 1, 'no vuelve a subir');
     assertEq(Intro3D.nextQuality(1, 80), 1, 'no pasa del nivel máximo');
   });
+
+  // ---------- Parallax ----------
+  test('Intro3D.parallaxOffset: centro = sin desplazamiento; el signo sigue al puntero', function () {
+    var c = Intro3D.parallaxOffset(0, 0);
+    assertClose(c.dAngle, 0, 1e-12, 'ángulo en el centro'); assertClose(c.dHeight, 0, 1e-12, 'altura en el centro');
+    assert(Intro3D.parallaxOffset(1, 0).dAngle > 0, 'derecha gira a +');
+    assert(Intro3D.parallaxOffset(-1, 0).dAngle < 0, 'izquierda gira a −');
+    assert(Intro3D.parallaxOffset(0, -1).dHeight > 0, 'puntero arriba sube la cámara');
+    assert(Intro3D.parallaxOffset(0, 1).dHeight < 0, 'puntero abajo baja la cámara');
+  });
+
+  test('Intro3D.parallaxOffset: recorta fuera de −1..1 y tolera valores inválidos', function () {
+    var a = Intro3D.parallaxOffset(1, 1), b = Intro3D.parallaxOffset(50, 50);
+    assertClose(b.dAngle, a.dAngle, 1e-12, 'recorte de ángulo'); assertClose(b.dHeight, a.dHeight, 1e-12, 'recorte de altura');
+    var n = Intro3D.parallaxOffset(NaN, undefined);
+    assertClose(n.dAngle, 0, 1e-12, 'NaN'); assertClose(n.dHeight, 0, 1e-12, 'undefined');
+    assert(Math.abs(a.dAngle) <= 0.5, 'el giro máximo es suave (≤ ~0,5 rad)');
+  });
 })();

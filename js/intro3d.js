@@ -95,6 +95,13 @@
   var SLOW_MS = 34;
   function nextQuality(level, avgMs) { return level >= 1 ? 1 : (avgMs > SLOW_MS ? 1 : 0); }
 
+  // Parallax: el puntero (mouse o dedo) desplaza un poco la cámara. nx, ny en −1..1; se recortan.
+  var PARALLAX_ANGLE = 0.35, PARALLAX_HEIGHT = 0.7;
+  function parallaxOffset(nx, ny) {
+    var cl = function (v) { return Math.max(-1, Math.min(1, typeof v === 'number' && isFinite(v) ? v : 0)); };
+    return { dAngle: cl(nx) * PARALLAX_ANGLE, dHeight: -cl(ny) * PARALLAX_HEIGHT };
+  }
+
   function camDistance(aspect) { return aspect < 1.3 ? Math.min(11, 6.2 * 1.3 / aspect) : 6.2; }
 
   // ---- Escena ----
@@ -206,9 +213,9 @@
     if (st.caption !== l.lastCaption) { l.lastCaption = st.caption; l.caption.text.textContent = st.caption; }
   }
 
-  function placeCamera(l, angle) {
+  function placeCamera(l, angle, dh) {
     var aspect = l.camera.aspect, r = camDistance(aspect);
-    l.camera.position.set(r * Math.cos(angle), 3.6 * r / 6.2, r * Math.sin(angle));
+    l.camera.position.set(r * Math.cos(angle), 3.6 * r / 6.2 + (dh || 0), r * Math.sin(angle));
     l.camera.lookAt(0, 0.4, 0);
   }
 
@@ -234,7 +241,9 @@
     live.last = t;
     applyState(live, stateAt(live.seq, ms));
     driftFog(live.fog, ms / 1000);
-    placeCamera(live, ms * 0.00012);
+    live.px += (live.tx - live.px) * 0.08; live.py += (live.ty - live.py) * 0.08;   // suavizado
+    var par = parallaxOffset(live.px, live.py);
+    placeCamera(live, ms * 0.00012 + par.dAngle, par.dHeight);
     live.renderer.render(live.scene, live.camera);
     live.raf = requestAnimationFrame(frame);
   }
@@ -247,12 +256,20 @@
     try {
       var s = buildScene(T, container);
       live = { renderer: s.renderer, scene: s.scene, camera: s.camera, canvas: s.canvas, sectors: s.sectors, fog: s.fog, caption: s.caption,
-        container: container, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: sequence(3) };
+        container: container, px: 0, py: 0, tx: 0, ty: 0, raf: 0, t0: null, last: null, avg: null, frames: 0, quality: 0, lastCaption: null, seq: sequence(3) };
       live.onResize = function () {
         var w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
         live.renderer.setSize(w, h, false); live.camera.aspect = w / h; live.camera.updateProjectionMatrix();
       };
       window.addEventListener('resize', live.onResize);
+      if (!reduce) {
+        live.onPointer = function (e) {
+          if (!live || typeof e.clientX !== 'number') return;
+          live.tx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+          live.ty = (e.clientY / Math.max(1, window.innerHeight)) * 2 - 1;
+        };
+        window.addEventListener('pointermove', live.onPointer, { passive: true });
+      }
       live.onVisibility = function () {
         if (document.hidden) { cancelAnimationFrame(live.raf); live.raf = 0; }
         else if (live && !live.raf && !reduce) live.raf = requestAnimationFrame(frame);
@@ -273,6 +290,7 @@
     var l = live; live = null;
     cancelAnimationFrame(l.raf);
     window.removeEventListener('resize', l.onResize);
+    if (l.onPointer) window.removeEventListener('pointermove', l.onPointer);
     document.removeEventListener('visibilitychange', l.onVisibility);
     l.scene.traverse(function (o) {
       if (o.geometry) o.geometry.dispose();
@@ -285,6 +303,6 @@
 
   window.Intro3D = {
     start: start, stop: stop, layout: layout, polar: polar, defaultResult: defaultResult, getResult: getResult,
-    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, timing: { HOLD: HOLD, MOVE: MOVE }
+    sequence: sequence, stateAt: stateAt, nextQuality: nextQuality, parallaxOffset: parallaxOffset, timing: { HOLD: HOLD, MOVE: MOVE }
   };
 })();
