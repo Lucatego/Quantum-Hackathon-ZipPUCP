@@ -9,7 +9,7 @@
     #bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
     #bar button { min-height: 44px; padding: 0 14px; font-size: 14px; border-radius: 8px; border: 1px solid #3a4260; background: #1a2038; color: inherit; }
     #bar button.on { background: #4cc9f0; color: #0e1220; }
-    canvas { display: block; width: 100%; height: 360px; }
+    canvas { display: block; width: 100%; height: 420px; }
   </style>
 </head>
 <body>
@@ -42,11 +42,30 @@
       canvas.width = w * dpr; canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);             // el contrato entrega ctx ya escalado
       ctx.clearRect(0, 0, w, h);
-      var cx = w / 2, cy = h / 2;
+      var cx = w / 2, cy = h / 2 + 50;   // deja libre la esquina del HUD
       ctx.fillStyle = '#e8ecf4'; ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill(); // tanque
       var r = state.cannon === 'quantum' ? quantumResult(state.k) : classicResult(state.k);
       UI.drawSectors(ctx, cx, cy, r, state.cannon);
       if (UI.drawHUD) UI.drawHUD(ctx, { energy: 64, cannon: state.cannon, k: state.k, radar: true });
+    }
+
+    // --- Overlays con datos falsos (Content y Quantum son stubs solo de esta página) ---
+    window.Content = {
+      start: ['Hay un enemigo escondido en la niebla.', 'Clásico descarta; cuántico amplifica.', 'Misma energía y mismo sensor.'],
+      cards: { amplitud: { titulo: 'Amplitud no es probabilidad', intuitivo: 'La amplitud puede ser negativa; al elevarla al cuadrado obtienes la probabilidad.', profundo: 'Texto de ver más (stub).' } },
+      pickCard: function () { return 'amplitud'; }
+    };
+    window.Quantum = { toQiskit: function (k) { return ['# STUB k=' + k, 'qc = QuantumCircuit(3, 3)', 'qc.h([0, 1, 2])', 'qc.measure([0, 1, 2], [0, 1, 2])'].join('\n'); } };
+    function fakeLog() {
+      var log = [], t = 0;
+      [['classic', 0], ['classic', 1], ['classic', 2], ['classic', 3], ['quantum', 0], ['quantum', 1], ['quantum', 2], ['quantum', 3]].forEach(function (ck, n) {
+        var shots = n === 6 ? 8 : 3;
+        for (var j = 0; j < shots; j++) {
+          var hit = ck[0] === 'quantum' && ck[1] === 2 ? j !== 0 : j === 0;
+          log.push({ cannon: ck[0], k: ck[1], target: 2, shot: hit ? 2 : 5, hit: hit, theory: ck[0] === 'quantum' ? THEORY[ck[1]] : (ck[1] + 1) / 8, t: t++ });
+        }
+      });
+      return log;
     }
 
     var bar = document.getElementById('bar');
@@ -58,6 +77,8 @@
     ['quantum', 'classic'].forEach(function (c) { btns.push([add(c === 'quantum' ? 'Cuántico' : 'Clásico', function () { state.cannon = c; }, 'c'), function () { return state.cannon === c; }]); });
     [0, 1, 2, 3].forEach(function (k) { btns.push([add('k = ' + k, function () { state.k = k; }, 'k'), function () { return state.k === k; }]); });
     function refresh() { btns.forEach(function (p) { p[0].className = p[1]() ? 'on' : ''; }); draw(); }
+    add('Pantalla inicio', function () { UI.showStart(function () {}); }, 'o');
+    add('Pantalla final', function () { UI.showEnd(fakeLog(), function () {}); }, 'o');
     window.addEventListener('resize', draw);
     refresh();
   </script>

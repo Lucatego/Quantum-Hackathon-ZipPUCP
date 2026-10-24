@@ -2,7 +2,7 @@
 
 Archivos propios: `js/ui.js`, `test/ui.html`, `test/ui.spec.js`, `test/ui.test.html`, `test/mini-test.js`, `test/run-ui-tests.js`, `test/check-contract.js`. Nada fuera de eso, salvo la fase 5 (integración).
 
-**Estado de la Fase 0:** hecha. `ui.js` es un esqueleto; `test/ui.spec.js` ya tiene 24 pruebas escritas contra el contrato (están en rojo a propósito hasta implementar cada fase). Verificadas como alcanzables con una implementación de referencia desechable (24/24 con jsdom).
+**Estado:** fases 0–4 hechas (24/24 pruebas con jsdom). La fase 4 se revisó en Chrome a 360 px de ancho; lo último (HUD sin solaparse con los sectores) no se volvió a ver tras el ajuste. Fase 0: `ui.js` es un esqueleto; `test/ui.spec.js` ya tiene 24 pruebas escritas contra el contrato (están en rojo a propósito hasta implementar cada fase). Verificadas como alcanzables con una implementación de referencia desechable (24/24 con jsdom).
 
 Agentes (en `.claude/agents/`): `ui-front` (implementa fases 0–4 con pruebas), `integration-verifier` (tras cada push de otra rama), `contract-auditor` (revisión de solo lectura del contrato).
 Contrato: [`TAREAS.md`](../TAREAS.md). Agente que ejecuta las fases 0–4: `ui-front`.

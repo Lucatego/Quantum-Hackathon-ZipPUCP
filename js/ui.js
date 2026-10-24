@@ -52,7 +52,7 @@
       var ry = by + (extra.length ? 58 : 30);
       if (on) { ctx.fillStyle = COLOR.neg; ctx.beginPath(); ctx.arc(x + 8, ry, 7, 0, Math.PI * 2); ctx.fill(); }
       ctx.fillStyle = COLOR.text;
-      ctx.fillText(state.searching ? 'Buscando…' : 'Radar: hay alguien (Espacio)', x + 22, ry);
+      ctx.fillText(state.searching ? 'Buscando…' : '¡Hay alguien! (Espacio)', x + 22, ry);
     } else if (state.searching) {
       ctx.fillStyle = COLOR.text;
       ctx.fillText('Buscando…', x, by + (extra.length ? 58 : 30));
@@ -147,20 +147,20 @@
     s.id = 'ui-style';
     s.textContent =
       '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:10;display:flex;align-items:flex-start;justify-content:center;overflow:auto;' +
-      'background:rgba(14,18,32,.94);color:' + COLOR.text + ';font:15px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
+      'background:#0e1220;color:' + COLOR.text + ';font:15px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}' +
       '#' + OVERLAY_ID + ' .box{width:100%;max-width:640px;margin:auto}' +
-      '#' + OVERLAY_ID + ' h1{margin:0 0 12px;letter-spacing:.12em;color:' + COLOR.pos + '}' +
+      '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
       '#' + OVERLAY_ID + ' button{min-height:44px;padding:0 18px;margin:8px 8px 0 0;font:600 15px system-ui,sans-serif;color:#0e1220;' +
       'background:' + COLOR.pos + ';border:0;border-radius:10px;cursor:pointer}' +
       '#' + OVERLAY_ID + ' button.alt{background:transparent;color:' + COLOR.text + ';border:1px solid ' + COLOR.guide + '}' +
       '#' + OVERLAY_ID + ' .scroll{overflow-x:auto}' +
-      '#' + OVERLAY_ID + ' table{border-collapse:collapse;width:100%;min-width:420px}' +
-      '#' + OVERLAY_ID + ' th,#' + OVERLAY_ID + ' td{padding:6px 8px;text-align:right;border-bottom:1px solid ' + COLOR.guide + '}' +
+      '#' + OVERLAY_ID + ' table{border-collapse:collapse;width:100%;font-size:14px}' +
+      '#' + OVERLAY_ID + ' th,#' + OVERLAY_ID + ' td{padding:6px 4px;text-align:right;border-bottom:1px solid ' + COLOR.guide + '}' +
       '#' + OVERLAY_ID + ' th:first-child,#' + OVERLAY_ID + ' td:first-child{text-align:left}' +
       '#' + OVERLAY_ID + ' .card{background:rgba(232,236,244,.07);border-left:4px solid ' + COLOR.prob + ';border-radius:8px;padding:4px 14px 12px}' +
       '#' + OVERLAY_ID + ' summary{cursor:pointer;color:' + COLOR.prob + ';min-height:44px;display:flex;align-items:center}' +
-      '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:13px}';
+      '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}';
     document.head.appendChild(s);
   }
 
@@ -221,11 +221,11 @@
 
   function statsTable(rows) {
     var wrap = el('div', undefined, 'scroll'), t = el('table'), head = el('tr');
-    ['Cañón', 'k', 'Disparos', 'Aciertos', 'Observado', 'Teórico'].forEach(function (h) { head.appendChild(el('th', h)); });
+    ['Cañón', 'k', 'Aciertos', 'Observado', 'Teórico'].forEach(function (h) { head.appendChild(el('th', h)); });
     t.appendChild(head);
     rows.forEach(function (g) {
       var tr = el('tr');
-      [g.cannon === 'quantum' ? 'Cuántico' : 'Clásico', String(g.k), String(g.shots), String(g.hits), pct(g.hits / g.shots), pct(g.theory)]
+      [g.cannon === 'quantum' ? 'Cuántico' : 'Clásico', String(g.k), g.hits + '/' + g.shots, pct(g.hits / g.shots), pct(g.theory)]
         .forEach(function (c) { tr.appendChild(el('td', c)); });
       t.appendChild(tr);
     });
