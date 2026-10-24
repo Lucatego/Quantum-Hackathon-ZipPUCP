@@ -17,6 +17,9 @@
     searchDamage: 60,
     botBulletDamage: 6,
     fireCooldown: 0.25,
+    aimTurnSpeed: 3.2,     // rad/s al girar el cañón con ← →
+    lookAheadMax: 320,     // cuánto puede adelantarse la cámara con ↑ (píxeles)
+    lookAheadSpeed: 600,   // píxeles por segundo al adelantar o recoger la vista
     botFireCooldown: 1.1,
     radarRange: 380,
     botSight: 450,
@@ -83,6 +86,10 @@
   let inputBound = false;
   const keys = {};
   const mouse = { x: 0, y: 0, down: false };
+  // Puntería: 'keys' (← → giran el cañón, sin mouse) o 'mouse'. Empieza en 'keys' y pasa a 'mouse'
+  // en cuanto el mouse se mueve sobre el canvas; vuelve a 'keys' al tocar ← o →.
+  let aimMode = 'keys';
+  let lookAhead = 0;
 
   // Pistas: cada una se muestra una sola vez por sesión (no se reinicia al jugar otra vez).
   const seenHints = new Set();
@@ -383,16 +390,27 @@
   function updatePlayer(dt) {
     const p = world.player;
     if (!p.alive) return;
-    let mx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
-    let my = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0);
+    // WASD mueve; las flechas apuntan y mueven la vista (para jugar sin mouse).
+    let mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    let my = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
     const len = Math.hypot(mx, my) || 1;
     p.x = clamp(p.x + (mx / len) * config.playerSpeed * dt, p.r, config.world.w - p.r);
     p.y = clamp(p.y + (my / len) * config.playerSpeed * dt, p.r, config.world.h - p.r);
 
-    const m = screenToWorld(mouse.x, mouse.y);
-    p.angle = Math.atan2(m.y - p.y, m.x - p.x);
+    const turn = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0);
+    if (turn) aimMode = 'keys';
+    if (aimMode === 'mouse') {
+      const m = screenToWorld(mouse.x, mouse.y);
+      p.angle = Math.atan2(m.y - p.y, m.x - p.x);
+    } else {
+      p.angle += turn * config.aimTurnSpeed * dt;
+    }
+    const look = (keys.ArrowUp ? 1 : 0) - (keys.ArrowDown ? 1 : 0);
+    if (look > 0) lookAhead = Math.min(config.lookAheadMax, lookAhead + config.lookAheadSpeed * dt);
+    else if (look < 0) lookAhead = Math.max(0, lookAhead - config.lookAheadSpeed * dt);
+
     p.fireCd -= dt;
-    if (mouse.down && p.fireCd <= 0 && !world.search) {
+    if ((mouse.down || keys.KeyF) && p.fireCd <= 0 && !world.search) {
       fire(p, p.angle, config.bulletDamage);
       p.fireCd = config.fireCooldown;
     }
@@ -648,8 +666,10 @@
 
   function updateCamera() {
     const v = viewSize(), W = config.world.w, H = config.world.h, p = world.player;
-    cam.x = W <= v.w ? (W - v.w) / 2 : clamp(p.x - v.w / 2, 0, W - v.w);
-    cam.y = H <= v.h ? (H - v.h) / 2 : clamp(p.y - v.h / 2, 0, H - v.h);
+    // Con ↑ la cámara mira hacia donde apunta el cañón.
+    const fx = p.x + Math.cos(p.angle) * lookAhead, fy = p.y + Math.sin(p.angle) * lookAhead;
+    cam.x = W <= v.w ? (W - v.w) / 2 : clamp(fx - v.w / 2, 0, W - v.w);
+    cam.y = H <= v.h ? (H - v.h) / 2 : clamp(fy - v.h / 2, 0, H - v.h);
   }
 
   function screenToWorld(sx, sy) {
@@ -722,6 +742,18 @@
     }
     const p = world.player;
     if (p.alive) {
+      if (aimMode === 'keys') {
+        // Sin mouse no hay cursor: una línea punteada muestra hacia dónde sale el disparo.
+        ctx.save();
+        ctx.strokeStyle = 'rgba(155,231,255,0.35)';
+        ctx.setLineDash([6, 8]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(p.x + Math.cos(p.angle) * (p.r + 24), p.y + Math.sin(p.angle) * (p.r + 24));
+        ctx.lineTo(p.x + Math.cos(p.angle) * 260, p.y + Math.sin(p.angle) * 260);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.globalAlpha = inFog(p) ? 0.6 : 1;
       drawTank(p);
       ctx.globalAlpha = 1;
@@ -986,6 +1018,7 @@
     });
     window.addEventListener('keyup', (e) => { keys[e.code] = false; });
     canvas.addEventListener('mousemove', (e) => {
+      aimMode = 'mouse';
       const r = canvas.getBoundingClientRect();
       mouse.x = e.clientX - r.left;
       mouse.y = e.clientY - r.top;
@@ -1039,6 +1072,7 @@
     hintQueue.length = 0;
     hintCur = null;
     mouse.down = false;
+    lookAhead = 0;
     if (!running) {
       running = true;
       lastTime = performance.now();
