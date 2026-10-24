@@ -21,18 +21,24 @@
 
   <script>
     // ---- STUB de Quantum: fórmulas analíticas, NO es el simulador real (ese es js/quantum.js de Avix) ----
+    // Sensor: con prob. sensorFlip percibe un sector equivocado (simplificado: una sola percepción por disparo).
+    function perceive(target, flip) {
+      if (flip > 0 && Math.random() < flip) { var w = Math.floor(Math.random() * 7); return w >= target ? w + 1 : w; }
+      return target;
+    }
     window.Quantum = {
       runQuantum: function (o) {
         var theta = Math.asin(1 / Math.sqrt(8));
         var a = Math.sin((2 * o.k + 1) * theta);
         var rest = Math.cos((2 * o.k + 1) * theta) / Math.sqrt(7);
+        var marked = o.k > 0 ? perceive(o.target, o.sensorFlip || 0) : o.target;
         var amps = [], probs = [];
         for (var i = 0; i < 8; i++) {
-          var v = i === o.target ? a : rest;
+          var v = i === marked ? a : rest;
           amps.push({ re: v, im: 0 });
           probs.push(v * v);
         }
-        return { amps: amps, probs: probs, theory: a * a };
+        return { amps: amps, probs: probs, theory: a * a, misreads: marked === o.target ? 0 : 1 };
       },
       runClassical: function (o) {
         var order = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -40,17 +46,19 @@
           var j = Math.floor(Math.random() * (s + 1)), tmp = order[s];
           order[s] = order[j]; order[j] = tmp;
         }
-        var discarded = [], found = false;
+        var discarded = [], found = false, hit = -1, misreads = 0;
         for (var q = 0; q < o.k; q++) {
-          if (order[q] === o.target) { found = true; break; }
+          var seen = perceive(o.target, o.sensorFlip || 0);
+          if (seen !== o.target) misreads++;
+          if (seen === order[q]) { found = true; hit = order[q]; break; }
           discarded.push(order[q]);
         }
         var probs = [];
         for (var i = 0; i < 8; i++) {
-          if (found) probs.push(i === o.target ? 1 : 0);
+          if (found) probs.push(i === hit ? 1 : 0);
           else probs.push(discarded.indexOf(i) >= 0 ? 0 : 1 / (8 - discarded.length));
         }
-        return { probs: probs, discarded: discarded, found: found, theory: (o.k + 1) / 8 };
+        return { probs: probs, discarded: discarded, found: found, theory: (o.k + 1) / 8, misreads: misreads };
       },
       sample: function (probs) {
         var r = Math.random(), acc = 0;
@@ -104,7 +112,7 @@
           '<p>Si el radar detecta a alguien en la niebla: elige cañón [1/2] y k [Q/E], y pulsa Espacio.</p>' +
           '<p>Clásico: descarta sectores. Cuántico: amplifica amplitudes.</p>', 'Jugar', onPlay);
       },
-      showEnd: function (log, onReplay) {
+      showEnd: function (log, onReplay, history) {
         var groups = {};
         log.forEach(function (e) {
           var key = e.cannon + ' k=' + e.k;
@@ -117,7 +125,23 @@
             Math.round(100 * g.hits / g.n) + '%</td><td>' + Math.round(100 * g.theory) + '%</td></tr>';
         }).join('');
         overlay('<h2>Fin de la partida</h2><table><tr><th>Cañón</th><th>Aciertos</th><th>Observado</th><th>Teoría</th></tr>' +
-          (rows || '<tr><td colspan="4">Sin disparos de búsqueda</td></tr>') + '</table>', 'Jugar otra vez', onReplay);
+          (rows || '<tr><td colspan="4">Sin disparos de búsqueda</td></tr>') + '</table>' +
+          '<p>En tormenta: ' + log.filter(function (e) { return e.zone === 'tormenta'; }).length +
+          ' · con lecturas falsas del sensor: ' + log.filter(function (e) { return e.misreads > 0; }).length +
+          ' · acumulado de la sesión: ' + (history || []).length + ' búsquedas</p>', 'Jugar otra vez', onReplay);
+      }
+    };
+
+    // ---- STUB de Content: solo las pistas, para ver cuándo salen (el real es js/content.js de Alvaro) ----
+    window.Content = {
+      hints: {
+        primeraBusqueda: '[pista] El radar sabe que hay alguien, pero no en cuál de los 8 sectores. Pulsa Espacio.',
+        primerCuantico: '[pista] Primer disparo cuántico: mira las barras de amplitud antes del tiro.',
+        aciertoCuantico: '[pista] Acierto cuántico con k ≥ 1.',
+        sobreRotacion: '[pista] Fallo con k = 3: te pasaste de iteraciones.',
+        tormenta: '[pista] Disparo en la tormenta: el sensor miente a veces, para ambos cañones.',
+        ruidoCircuito: '[pista] Fallo con k = 2: puede ser el ruido del circuito.',
+        kCero: '[pista] k = 0: disparo a ciegas, 1 de 8.'
       }
     };
 
