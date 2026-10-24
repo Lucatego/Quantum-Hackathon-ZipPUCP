@@ -52,7 +52,7 @@
     var extra = [];
     if (typeof state.hp === 'number' && isFinite(state.hp)) extra.push('Vida ' + Math.round(state.hp));
     if (typeof state.botsLeft === 'number' && isFinite(state.botsLeft)) extra.push('Bots ' + Math.round(state.botsLeft));
-    if (state.inHazardH) extra.push('H activa');
+    if (state.inHazardH) extra.push('Zona inestable');
     if (extra.length) { ctx.fillStyle = COLOR.text; ctx.fillText(extra.join(' · '), x, by + 30); }
 
     // Radar "hay alguien": parpadea con Date.now()

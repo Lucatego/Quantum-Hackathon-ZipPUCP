@@ -6,6 +6,21 @@
   const SECTORS = 8;
   const SECTOR_ANGLE = (Math.PI * 2) / SECTORS;
   const RECORD_KEY = 'collapse.record';
+  const COLLECTION_KEY = 'collapse.coleccion';
+
+  // Colección de conceptos: cada logro es un objetivo de aprendizaje (sección 5 del brief).
+  // Nombre de respaldo; Content.achievements[id].titulo lo reemplaza.
+  const ACHIEVEMENTS = {
+    probCondicional: 'Probabilidad condicional',
+    amplitudNegativa: 'Amplitud negativa',
+    marcadorSolo: 'El marcador solo no basta',
+    interferencia: 'Interferencia',
+    sobreRotacion: 'Sobre-rotación',
+    tormentaEngana: 'La tormenta engaña a los dos',
+    decoherencia: 'Decoherencia',
+    grandesNumeros: 'Ley de los grandes números',
+    calibracion: 'Calibración',
+  };
 
   const config = {
     world: { w: 3200, h: 2200 },
@@ -59,6 +74,23 @@
     formTime: 4,           // segundos que tarda en formarse el banco nuevo
     botSearchCooldown: 3.5,
     botSearchDamage: 10,
+    // Loot de piezas de circuito (fase 3): el cañón cuántico se arma con lo que recoges, en ese orden.
+    // Solo se activa si Quantum.runCircuit existe; si no, el cuántico sigue con k libre (Q/E).
+    loot: true,
+    lootInitial: 12,       // piezas al empezar (además del kit garantizado)
+    lootEvery: 8,          // segundos de juego entre piezas nuevas
+    lootMax: 20,           // piezas en el piso como máximo
+    lootWeights: { H: 20, M: 30, D: 30, S: 10 },
+    circuitMax: 8,         // ranuras del circuito
+    pieceRadius: 14,
+  };
+
+  // Piezas del circuito: nombre de respaldo (Content.pieces[x].nombre lo reemplaza) y color.
+  const PIECES = {
+    H: { nombre: 'Superposición', color: '#4cc9f0' },
+    M: { nombre: 'Marcador', color: '#ff6b9d' },
+    D: { nombre: 'Difusor', color: '#ffd166' },
+    S: { nombre: 'Estabilizador', color: '#80ed99' },
   };
 
   // Arquetipos de bots (sección 8.8): cómo buscan al jugador cuando se esconde en la niebla.
@@ -78,7 +110,10 @@
     [0.88, 0.55, 210], [0.18, 0.84, 220], [0.52, 0.8, 250], [0.84, 0.86, 190],
   ];
 
-  const Game = { config, log: [], history: [], state: null, record: loadRecord(), start };
+  const Game = {
+    config, log: [], history: [], state: null, record: loadRecord(), start,
+    collection: loadCollection(), ACHIEVEMENTS: Object.keys(ACHIEVEMENTS),
+  };
   window.Game = Game;
 
   let canvas, ctx;
@@ -161,8 +196,127 @@
     return { kills: 0, quantumAcc: null };
   }
 
+  function loadCollection() {
+    try {
+      const c = JSON.parse(localStorage.getItem(COLLECTION_KEY));
+      if (c && c.unlocked && c.stats) return c;
+    } catch (e) { /* sin almacenamiento: colección solo en memoria */ }
+    return { unlocked: {}, stats: { classic: 0, searches: 0, stormMisreads: 0, hitStd2: 0 } };
+  }
+
+  function saveCollection() {
+    try { localStorage.setItem(COLLECTION_KEY, JSON.stringify(Game.collection)); } catch (e) { /* ignorar */ }
+  }
+
+  function achievementTitle(id) {
+    const C = window.Content;
+    const a = C && C.achievements && C.achievements[id];
+    return (a && a.titulo) || ACHIEVEMENTS[id] || id;
+  }
+
+  function unlock(id) {
+    const c = Game.collection;
+    if (c.unlocked[id]) return;
+    c.unlocked[id] = new Date().toISOString();
+    saveCollection();
+    world.newConcepts.push(id);
+    const n = Object.keys(c.unlocked).length, total = Object.keys(ACHIEVEMENTS).length;
+    hintQueue.push('★ Concepto desbloqueado: ' + achievementTitle(id) + ' (' + n + '/' + total + ')');
+  }
+
   function saveRecord(r) {
     try { localStorage.setItem(RECORD_KEY, JSON.stringify(r)); } catch (e) { /* ignorar */ }
+  }
+
+  // ---------- piezas del circuito ----------
+  function pieceName(t) {
+    const C = window.Content;
+    const c = C && C.pieces && C.pieces[t];
+    return (c && c.nombre) || (PIECES[t] && PIECES[t].nombre) || t;
+  }
+
+  // El cañón cuántico se arma con piezas si el simulador sabe ejecutar circuitos arbitrarios.
+  function circuitModeAvailable() {
+    return config.loot && !isDemo() && !!(window.Quantum && typeof window.Quantum.runCircuit === 'function');
+  }
+
+  // gates: compuertas que se simulan; queries: consultas al sensor (marcadores); nS: estabilizadores;
+  // std: número de iteraciones si el circuito es el Grover estándar H(MD)^n, o null si es otro circuito.
+  function circuitInfo(circ) {
+    const gates = circ.filter((t) => t === 'H' || t === 'M' || t === 'D');
+    const str = gates.join('');
+    return {
+      gates, str: circ.join(''),
+      queries: gates.filter((t) => t === 'M').length,
+      nS: circ.filter((t) => t === 'S').length,
+      std: /^H(MD)*$/.test(str) ? (gates.length - 1) / 2 : null,
+    };
+  }
+
+  function makePiece(type, x, y) {
+    return { type, x, y, bob: rand(0, Math.PI * 2), noPickUntil: 0 };
+  }
+
+  function randomPieceType() {
+    const wts = config.lootWeights, keysW = Object.keys(wts);
+    let r = Math.random() * keysW.reduce((a, k) => a + wts[k], 0);
+    for (const k of keysW) { r -= wts[k]; if (r < 0) return k; }
+    return keysW[keysW.length - 1];
+  }
+
+  function lootPoint() {
+    const z = world.zone, W = config.world.w, H = config.world.h;
+    for (let i = 0; i < 20; i++) {
+      const q = Math.random() < 0.4 ? pointInFog() : randomPoint();
+      q.x = clamp(q.x, 40, W - 40); q.y = clamp(q.y, 40, H - 40);
+      if (!z.enabled || !outsideSafe(q)) return q;
+    }
+    return randomPoint();
+  }
+
+  // Kit garantizado: H, M y D cerca del inicio, para que nadie se quede sin probar el cañón cuántico.
+  function giveStarterKit() {
+    const p = world.player, base = -Math.PI / 2;
+    [['H', 140, -0.6], ['M', 230, 0], ['D', 320, 0.6]].forEach(([t, d, da]) => {
+      world.groundPieces.push(makePiece(t, clamp(p.x + Math.cos(base + da) * d, 40, config.world.w - 40), clamp(p.y + Math.sin(base + da) * d, 40, config.world.h - 40)));
+    });
+  }
+
+  function updateLoot() {
+    const w = world, p = w.player;
+    if (!w.circuitMode || !p.alive) return;
+    if (w.time >= w.nextLootAt) {
+      w.nextLootAt += config.lootEvery;
+      if (w.groundPieces.length < config.lootMax) { const q = lootPoint(); w.groundPieces.push(makePiece(randomPieceType(), q.x, q.y)); }
+    }
+    for (let i = w.groundPieces.length - 1; i >= 0; i--) {
+      const g = w.groundPieces[i];
+      if (w.time < g.noPickUntil || dist(p, g) > p.r + config.pieceRadius) continue;
+      if (w.circuit.length >= config.circuitMax) {
+        if (w.time - (g.fullMsgAt || -9) > 3) { g.fullMsgAt = w.time; say('Circuito lleno (' + config.circuitMax + ' piezas): R suelta la última'); }
+        continue;
+      }
+      w.circuit.push(g.type);
+      w.groundPieces.splice(i, 1);
+      say('Recogiste ' + pieceName(g.type) + ' · circuito: ' + w.circuit.join(' '));
+      hint('primeraPieza');
+      onPiecePicked(g.type);
+    }
+  }
+
+  function onPiecePicked(type) {
+    if (type === 'S') unlock('decoherencia');
+  }
+
+  function dropLastPiece() {
+    const w = world, p = w.player;
+    if (!w.circuitMode || !p.alive || w.search) return;
+    if (!w.circuit.length) return say('Tu circuito está vacío');
+    const t = w.circuit.pop(), a = p.angle + Math.PI;
+    const g = makePiece(t, clamp(p.x + Math.cos(a) * 60, 40, config.world.w - 40), clamp(p.y + Math.sin(a) * 60, 40, config.world.h - 40));
+    g.noPickUntil = w.time + 1.2;
+    w.groundPieces.push(g);
+    say('Soltaste ' + pieceName(t) + (w.circuit.length ? ' · circuito: ' + w.circuit.join(' ') : ' · circuito vacío'));
   }
 
   // ---------- mundo ----------
@@ -268,6 +422,8 @@
     }
     return {
       fog, hazards, pickups, player, bots,
+      circuit: [], groundPieces: [], circuitMode: false, nextLootAt: config.lootEvery,
+      newConcepts: [],
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null, radarBot: null,
@@ -304,7 +460,7 @@
       const shooter = bullet.owner;
       healTarget(shooter, amount);
       if (shooter && shooter.alive) burst(shooter.x, shooter.y, '#7ef7c7', 8);
-      if (shooter && shooter.isPlayer) say('+' + amount + ' de vida' + (bullet.superposed ? ' (la bala pasó por H)' : ' (bala 0)'));
+      if (shooter && shooter.isPlayer) say('+' + amount + ' de vida' + (bullet.superposed ? ' (la bala pasó por una zona inestable)' : ' (bala 0)'));
       return 'heal';
     }
     damage(target, Math.round((bullet.dmg || config.bulletDamage) * (bullet.superposed ? 1.1 : 1)), bullet.owner);
@@ -390,23 +546,45 @@
       : Q.runClassical({ k, target, sensorFlip });
   }
 
+  // Lo que va a disparar el jugador: con piezas, k = nº de marcadores del circuito; si no, k libre (Q/E).
+  function shotPlan() {
+    const w = world;
+    if (w.cannon === 'quantum' && w.circuitMode) {
+      const info = circuitInfo(w.circuit);
+      // El estabilizador lo aplica Quantum (divide el ruido a la mitad); acá solo se registra para el log.
+      return { k: info.queries, info, phaseNoise: config.phaseNoise * (info.nS ? 0.5 : 1) };
+    }
+    const k = w.k;
+    const info = w.cannon === 'quantum' ? circuitInfo(['H'].concat(...Array(k).fill(['M', 'D']))) : null;
+    return { k, info, phaseNoise: w.cannon === 'quantum' ? config.phaseNoise : 0 };
+  }
+
   function trySearch() {
     const w = world;
     if (!w || w.search || w.over || !w.player.alive) return;
     const bot = w.radarBot;
     if (!bot) return say('El radar no detecta a nadie en la niebla');
-    const cost = w.k * config.costPerQuery;
-    if (w.energy < cost) return say('Energía insuficiente para k = ' + w.k);
+    const plan = shotPlan();
+    if (w.cannon === 'quantum' && w.circuitMode && !plan.info.gates.length) return say('Tu cañón cuántico está vacío: recoge piezas H, M y D');
+    const cost = plan.k * config.costPerQuery;
+    if (w.energy < cost) return say('Energía insuficiente para k = ' + plan.k);
     w.energy -= cost;
 
     const target = sectorOf(w.player, bot);
     const zone = zoneOf(bot);
     const sensorFlip = sensorFlipAt(bot);
-    const result = runSearch(w.cannon, w.k, target, sensorFlip);
-    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: w.k, zone, sensorFlip };
+    const result = w.cannon === 'quantum' && w.circuitMode
+      ? window.Quantum.runCircuit({ pieces: w.circuit.slice(), target, phaseNoise: config.phaseNoise, sensorFlip })
+      : runSearch(w.cannon, plan.k, target, sensorFlip);
+    w.search = { t: 0, bot, target, result, cannon: w.cannon, k: plan.k, zone, sensorFlip, info: plan.info, phaseNoise: plan.phaseNoise };
 
-    if (w.cannon === 'quantum') hint('primerCuantico');
-    if (w.k === 0) hint('kCero');
+    if (w.cannon === 'quantum') {
+      hint('primerCuantico');
+      const g = plan.info.gates;
+      if (g.includes('M') && !g.includes('D')) hint('marcadorSolo');
+      if (!g.includes('H') && (g.includes('M') || g.includes('D'))) hint('sinSuperposicion');
+    }
+    if (plan.k === 0) hint('kCero');
     if (zone === 'tormenta') hint('tormenta');
   }
 
@@ -418,8 +596,9 @@
     const entry = {
       cannon: s.cannon, k: s.k, target: s.target, shot, hit, theory: s.result.theory, t: +w.time.toFixed(2),
       zone: s.zone, sensorFlip: s.sensorFlip,
-      phaseNoise: s.cannon === 'quantum' ? config.phaseNoise : 0,
+      phaseNoise: s.phaseNoise,
       misreads: s.result.misreads || 0,
+      circuit: s.info ? s.info.str : null,
     };
     Game.log.push(entry);
     Game.history.push(entry);
@@ -440,9 +619,30 @@
 
     if (s.cannon === 'quantum') {
       if (hit && s.k >= 1) hint('aciertoCuantico');
-      if (!hit && s.k === 3) hint('sobreRotacion');
-      if (!hit && s.k === 2) hint('ruidoCircuito');
+      if (!hit && s.info.std === 3) hint('sobreRotacion');
+      if (!hit && s.info.std === 2) hint('ruidoCircuito');
     }
+    onSearchResolved(entry, s);
+  }
+
+  // Detecta los logros a partir de lo que pasó en la búsqueda (no hay quizzes: se gana jugando).
+  function onSearchResolved(entry, s) {
+    const st = Game.collection.stats, info = s.info, g = info ? info.gates : [];
+    st.searches++;
+    if (entry.cannon === 'classic') {
+      st.classic++;
+      if (st.classic >= 5) unlock('probCondicional');
+    } else {
+      if (g.includes('M')) unlock('amplitudNegativa');
+      if (g.includes('M') && !g.includes('D')) unlock('marcadorSolo');
+      if (entry.hit && g.includes('H') && g.includes('M') && g.includes('D')) unlock('interferencia');
+      if (info.std === 2 && entry.hit) st.hitStd2++;
+      if (info.std === 3 && !entry.hit && st.hitStd2 > 0) unlock('sobreRotacion');
+      if (info.std === 2 && !entry.hit && entry.phaseNoise > 0) unlock('decoherencia');
+    }
+    if (entry.zone === 'tormenta' && entry.misreads > 0 && ++st.stormMisreads >= 3) unlock('tormentaEngana');
+    if (st.searches >= 30) unlock('grandesNumeros');
+    saveCollection();
   }
 
   // Un bot busca al jugador escondido en la niebla con el cañón de su arquetipo.
@@ -735,6 +935,7 @@
     w.time += dt;
     w.energy = Math.min(config.energyMax, w.energy + config.energyRegen * dt);
     updatePlayer(dt);
+    updateLoot();
     updateFog(dt);
     updateZone(dt);
     updateBots(dt);
@@ -832,7 +1033,7 @@
       ctx.fillStyle = '#d8f3ff';
       ctx.font = 'bold 18px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('H', hazard.x, hazard.y + 6);
+      ctx.fillText('≈', hazard.x, hazard.y + 6);   // zona inestable (no confundir con la pieza H del circuito)
       ctx.restore();
     }
 
@@ -846,6 +1047,21 @@
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(String(pickup.type), pickup.x, pickup.y + 5);
+    }
+
+    for (const g of world.groundPieces) {
+      if (g.x < cam.x - 30 || g.x > cam.x + v.w + 30 || g.y < cam.y - 30 || g.y > cam.y + v.h + 30) continue;
+      const bob = Math.sin(world.time * 3 + g.bob) * 2, sz = 22;
+      ctx.fillStyle = 'rgba(8,10,20,0.85)';
+      ctx.fillRect(g.x - sz / 2, g.y - sz / 2 + bob, sz, sz);
+      ctx.strokeStyle = PIECES[g.type].color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(g.x - sz / 2, g.y - sz / 2 + bob, sz, sz);
+      ctx.fillStyle = PIECES[g.type].color;
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(g.type, g.x, g.y + 5 + bob);
+      ctx.textAlign = 'left';
     }
 
     for (const u of world.bullets) {
@@ -956,12 +1172,17 @@
     return {
       energy: w.energy,
       cannon: w.cannon,
-      k: w.k,
+      k: shotPlan().k,
       radar: !!w.radarBot,
       hp: Math.max(0, w.player.hp),
       botsLeft: w.bots.filter((b) => b.alive).length,
-      cost: w.k * config.costPerQuery,
+      cost: shotPlan().k * config.costPerQuery,
       costPerQuery: config.costPerQuery,
+      circuit: w.circuit.slice(),
+      circuitMax: config.circuitMax,
+      circuitMode: w.circuitMode,
+      concepts: Object.keys(Game.collection.unlocked).length,
+      conceptsTotal: Object.keys(ACHIEVEMENTS).length,
       searching: !!w.search,
       activeBulletType: w.player.activeBulletType,
       inHazardH: !!findHazardAt(w.player.x, w.player.y),
@@ -1014,6 +1235,10 @@
       if (!b.alive || (inFog(b) && b.revealed <= 0) || dist(b, p) > config.botSight * 1.5) continue;
       ctx.fillRect(mx + b.x * s - 2, my + b.y * s - 2, 4, 4);
     }
+    for (const g of world.groundPieces) {
+      ctx.fillStyle = PIECES[g.type].color;
+      ctx.fillRect(mx + g.x * s - 1, my + g.y * s - 1, 2, 2);
+    }
     if (world.radarBot) {
       ctx.strokeStyle = 'rgba(255,224,102,0.6)';
       ctx.beginPath();
@@ -1030,6 +1255,29 @@
     ctx.strokeRect(mx, my, mw, mh);
   }
 
+  // Barra del circuito de respaldo (abajo a la izquierda). Gandy puede reemplazarla con UI.drawCircuit.
+  function drawCircuitBar(v) {
+    const c = world.circuit, sz = 26, gap = 4, x0 = 12, y0 = v.h - sz - 30;
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(232,236,244,0.85)';
+    ctx.fillText('Circuito del cañón cuántico' + (c.length ? ' · R suelta la última' : ' · recoge piezas H, M, D'), x0, y0 - 8);
+    for (let i = 0; i < config.circuitMax; i++) {
+      const x = x0 + i * (sz + gap), t = c[i];
+      ctx.fillStyle = 'rgba(8,10,20,0.75)';
+      ctx.fillRect(x, y0, sz, sz);
+      ctx.strokeStyle = t ? PIECES[t].color : 'rgba(232,236,244,0.2)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y0, sz, sz);
+      if (t) {
+        ctx.fillStyle = PIECES[t].color;
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(t, x + sz / 2, y0 + sz / 2 + 5);
+        ctx.textAlign = 'left';
+      }
+    }
+  }
+
   function drawOverlayText(v) {
     // Récord y bajas (arriba a la derecha; el HUD de UI va arriba a la izquierda)
     const r = Game.record;
@@ -1044,6 +1292,8 @@
     } else if (world.fogTarget < config.fogMaxScale) {
       ctx.fillText('La niebla se expande en ' + Math.ceil(world.nextFogAt - world.time) + ' s', v.w - 16, 60);
     }
+    ctx.fillStyle = 'rgba(255,209,102,0.9)';
+    ctx.fillText('Conceptos ' + Object.keys(Game.collection.unlocked).length + '/' + Object.keys(ACHIEVEMENTS).length, v.w - 16, 114);
     if (config.fogAlive) {
       const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
       let a = world.wind.ang % (Math.PI * 2);
@@ -1112,6 +1362,10 @@
       else if (world.lastResult) UIm.drawSectors(ctx, px, py, world.lastResult.result, world.lastResult.cannon);
     }
     if (UIm && UIm.drawHUD) UIm.drawHUD(ctx, hudState());
+    if (world.circuitMode) {
+      if (UIm && UIm.drawCircuit) UIm.drawCircuit(ctx, hudState());
+      else drawCircuitBar(v);
+    }
     drawMinimap(v);
     drawOverlayText(v);
   }
@@ -1134,8 +1388,13 @@
       if (e.code === 'Digit2') world.cannon = 'quantum';
       if (e.code === 'KeyZ') world.player.activeBulletType = 0;
       if (e.code === 'KeyX') world.player.activeBulletType = 1;
-      if (e.code === 'KeyQ') world.k = Math.max(0, world.k - 1);
-      if (e.code === 'KeyE') world.k = Math.min(3, world.k + 1);
+      if ((e.code === 'KeyQ' || e.code === 'KeyE') && world.cannon === 'quantum' && world.circuitMode) {
+        say('En el cuántico, k sale de tu circuito: recoge marcadores (M) y difusores (D), o suelta con R');
+      } else {
+        if (e.code === 'KeyQ') world.k = Math.max(0, world.k - 1);
+        if (e.code === 'KeyE') world.k = Math.min(3, world.k + 1);
+      }
+      if (e.code === 'KeyR') dropLastPiece();
       if (e.code === 'Space') trySearch();
     });
     window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1189,6 +1448,11 @@
     if (isDemo()) demoConfig();
     world = newWorld();
     if (isDemo()) setupDemo();
+    world.circuitMode = circuitModeAvailable();
+    if (world.circuitMode) {
+      giveStarterKit();
+      for (let i = 0; i < config.lootInitial; i++) { const q = lootPoint(); world.groundPieces.push(makePiece(randomPieceType(), q.x, q.y)); }
+    }
     Game.state = world;
     Game.log = [];
     hintQueue.length = 0;
