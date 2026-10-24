@@ -31,8 +31,16 @@
     else if (typeof state.costPerQuery === 'number' && isFinite(state.costPerQuery)) line += ' · ' + Math.round(state.costPerQuery) + '/consulta';
     ctx.fillText(line, x + 18, y + 11);
 
+    // Tipo de bala activa: 0 = cura, 1 = daño, H = superposición
+    var bulletType = state.activeBulletType === 0 ? '0: cura' : (state.activeBulletType === 1 ? '1: daño' : 'bala');
+    var bulletColor = state.activeBulletType === 0 ? COLOR.live : COLOR.neg;
+    ctx.fillStyle = bulletColor;
+    ctx.fillRect(x + 18, y + 28, 74, 10);
+    ctx.fillStyle = COLOR.text;
+    ctx.fillText('Bala ' + bulletType, x + 100, y + 33);
+
     // Energía 0..100
-    var by = y + 34;
+    var by = y + 52;
     ctx.fillStyle = 'rgba(232,236,244,0.15)';
     ctx.fillRect(x, by, HUD.barW, HUD.barH);
     ctx.fillStyle = energy < 25 ? COLOR.neg : COLOR.live;
@@ -40,10 +48,11 @@
     ctx.fillStyle = COLOR.text;
     ctx.fillText('Energía ' + Math.round(energy), x + HUD.barW + 10, by + HUD.barH / 2);
 
-    // Opcionales: vida y bots restantes
+    // Opcionales: vida, bots restantes y estado de zona H
     var extra = [];
     if (typeof state.hp === 'number' && isFinite(state.hp)) extra.push('Vida ' + Math.round(state.hp));
     if (typeof state.botsLeft === 'number' && isFinite(state.botsLeft)) extra.push('Bots ' + Math.round(state.botsLeft));
+    if (state.inHazardH) extra.push('H activa');
     if (extra.length) { ctx.fillStyle = COLOR.text; ctx.fillText(extra.join(' · '), x, by + 30); }
 
     // Radar "hay alguien": parpadea con Date.now()
@@ -111,11 +120,11 @@
       var p = clamp01(result.probs[i]);
       if (quantum) {
         var a = result.amps && result.amps[i];
-        var re = a ? num(a.re) : Math.sqrt(p);       // sin amps: se muestra |a| = √p
+        var re = a ? num(a.re) : Math.sqrt(p);
         ctx.globalAlpha = 1;
         ctx.fillStyle = re >= 0 ? COLOR.pos : COLOR.neg;
         wedge(ctx, x, y, i, R0, R0 + Math.min(1, Math.abs(re)) * RLEN, 0);
-        ctx.globalAlpha = 0.6;                        // cono de probabilidad, más angosto, encima
+        ctx.globalAlpha = 0.65;
         ctx.fillStyle = COLOR.prob;
         wedge(ctx, x, y, i, R0, R0 + p * RLEN, Math.PI / 20);
         ctx.globalAlpha = 1;
@@ -123,14 +132,22 @@
         ctx.globalAlpha = 1;
         if (dead[i]) {
           ctx.fillStyle = COLOR.dead;
-          wedge(ctx, x, y, i, R0, R0 + 8, 0);         // tope fijo: descartado, sin probabilidad
+          wedge(ctx, x, y, i, R0, R0 + 8, 0);
         } else {
           ctx.fillStyle = COLOR.live;
           wedge(ctx, x, y, i, R0, R0 + p * RLEN, 0);
         }
       }
-      sectorLabel(ctx, x, y, i, dead[i] ? '✕' : Math.round(p * 100) + '%');
+      var label = dead[i] ? '✕' : Math.round(p * 100) + '%';
+      sectorLabel(ctx, x, y, i, label);
     }
+
+    // Marca visual del estado H / superpuesto: un anillo de resplandor exterior para reforzar la idea de inestabilidad
+    ctx.strokeStyle = quantum ? 'rgba(255, 154, 87, 0.35)' : 'rgba(125, 246, 206, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, R0 + RLEN + 16, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
   // ---- Overlays (fase 3) ----
@@ -178,10 +195,13 @@
       '@media (prefers-reduced-motion:reduce){#' + OVERLAY_ID + ' .hero>*{animation:none!important}}' +
       '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px}' +
+      '#' + OVERLAY_ID + ' h1{margin:0 0 12px;font-size:24px;letter-spacing:.06em;color:' + COLOR.pos + ';line-height:1.2}' +
+      '#' + OVERLAY_ID + ' h2,#' + OVERLAY_ID + ' h3{margin:20px 0 8px;line-height:1.3}' +
+      '#' + OVERLAY_ID + ' p,#' + OVERLAY_ID + ' li,#' + OVERLAY_ID + ' summary,#' + OVERLAY_ID + ' pre,#' + OVERLAY_ID + ' td,#' + OVERLAY_ID + ' th{font-size:15px;line-height:1.5}' +
       '#' + OVERLAY_ID + ' ul{margin:8px 0 0 18px;padding:0}' +
       '#' + OVERLAY_ID + ' li{margin:6px 0}' +
       '#' + OVERLAY_ID + ' button{min-height:44px;padding:0 18px;margin:8px 8px 0 0;font:600 15px system-ui,sans-serif;color:#0e1220;' +
-      'background:' + COLOR.pos + ';border:0;border-radius:10px;cursor:pointer}' +
+      'background:' + COLOR.pos + ';border:0;border-radius:10px;cursor:pointer;touch-action:manipulation}' +
       '#' + OVERLAY_ID + ' button.alt{background:transparent;color:' + COLOR.text + ';border:1px solid ' + COLOR.guide + '}' +
       '#' + OVERLAY_ID + ' .scroll{overflow-x:auto}' +
       '#' + OVERLAY_ID + ' table{border-collapse:collapse;width:100%;font-size:14px}' +
