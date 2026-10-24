@@ -184,4 +184,24 @@
     assertClose(n.dAngle, 0, 1e-12, 'NaN'); assertClose(n.dHeight, 0, 1e-12, 'undefined');
     assert(Math.abs(a.dAngle) <= 0.5, 'el giro máximo es suave (≤ ~0,5 rad)');
   });
+
+  // ---------- Inmersión al pulsar Jugar ----------
+  test('Intro3D.diveCamera: empieza en la vista normal y termina cerca del tanque, sin retroceder', function () {
+    var a = Intro3D.diveCamera(0, 8, 5), z = Intro3D.diveCamera(1, 8, 5);
+    assertClose(a.r, 8, 1e-12, 'r inicial'); assertClose(a.h, 5, 1e-12, 'h inicial'); assertClose(a.look, 0.4, 1e-12, 'mira al centro');
+    assert(z.r < 3 && z.h < 2, 'termina cerca del tanque (r=' + z.r + ', h=' + z.h + ')');
+    var prev = Infinity;
+    for (var p = 0; p <= 1.0001; p += 0.1) { var c = Intro3D.diveCamera(p, 8, 5); assert(c.r <= prev + 1e-9, 'r no debe aumentar'); prev = c.r; }
+  });
+
+  test('Intro3D.diveCamera: recorta p fuera de 0..1 y tolera valores inválidos', function () {
+    assertClose(Intro3D.diveCamera(-3, 8, 5).r, 8, 1e-12, 'p < 0');
+    assertClose(Intro3D.diveCamera(9, 8, 5).r, Intro3D.diveCamera(1, 8, 5).r, 1e-12, 'p > 1');
+    assertClose(Intro3D.diveCamera(NaN, 8, 5).r, 8, 1e-12, 'NaN');
+  });
+
+  test('Intro3D.dive: sin escena activa devuelve false (el llamador sigue de inmediato)', function () {
+    Intro3D.stop();
+    assertEq(Intro3D.dive(function () {}), false, 'sin escena');
+  });
 })();

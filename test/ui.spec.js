@@ -279,6 +279,39 @@
     } finally { window.Intro3D = saved; }
   });
 
+  dom('showStart: con la escena activa, Jugar espera la inmersión y entra una sola vez', function () {
+    var saved = window.Intro3D, stops = 0, cb = null;
+    try {
+      window.Intro3D = { start: function () { return true; }, stop: function () { stops++; }, dive: function (f) { cb = f; return true; } };
+      var played = 0;
+      UI.showStart(function () { played++; });
+      var play = buttons()[0];
+      play.click(); play.click();
+      assertEq(played, 0, 'no debe entrar antes de terminar la inmersión');
+      assertEq(stops, 0, 'la escena sigue activa durante la inmersión');
+      assert(document.getElementById('ui-overlay').classList.contains('leaving'), 'el texto debe desvanecerse');
+      assert(play.disabled, 'Jugar se deshabilita durante la inmersión');
+      cb(); cb();
+      assertEq(played, 1, 'onPlay una sola vez'); assertEq(stops, 1, 'stop al terminar');
+    } finally { window.Intro3D = saved; }
+  });
+
+  dom('showStart: si la inmersión no puede (dive devuelve false o lanza), Jugar entra de inmediato', function () {
+    var saved = window.Intro3D;
+    try {
+      var played = 0;
+      window.Intro3D = { start: function () { return true; }, stop: function () {}, dive: function () { return false; } };
+      UI.showStart(function () { played++; });
+      buttons()[0].click();
+      assertEq(played, 1, 'dive=false');
+      document.body.innerHTML = '';
+      window.Intro3D = { start: function () { return true; }, stop: function () {}, dive: function () { throw new Error('boom'); } };
+      UI.showStart(function () { played++; });
+      buttons()[0].click();
+      assertEq(played, 2, 'dive lanza');
+    } finally { window.Intro3D = saved; }
+  });
+
   dom('showStart: Intro3D que no puede (false) o que lanza no rompe el inicio 2D', function () {
     var saved = window.Intro3D;
     try {

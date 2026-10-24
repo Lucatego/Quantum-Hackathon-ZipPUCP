@@ -176,6 +176,7 @@
         '#' + OVERLAY_ID + '.intro .stage{inset:0 0 0 40%;height:auto}' +
         '#' + OVERLAY_ID + '.intro .box{margin:0;max-width:470px}' +
       '}' +
+      '#' + OVERLAY_ID + '.leaving .box{opacity:0;transition:opacity .45s;pointer-events:none}' +
       '#' + OVERLAY_ID + ' .hero{display:flex;flex-direction:column;gap:10px}' +
       '#' + OVERLAY_ID + ' .eyebrow{margin:0;font-size:14px;font-weight:600;letter-spacing:.14em;color:' + COLOR.prob + '}' +
       '#' + OVERLAY_ID + ' .hero h1{margin:0;font-size:clamp(40px,9vw,72px);line-height:1;letter-spacing:.04em}' +
@@ -270,7 +271,7 @@
   // Portada 3D opcional detrás del inicio. Si Intro3D falta o no puede (sin WebGL), queda el inicio 2D.
   function mountIntro(o) {
     var I = window.Intro3D;
-    if (!I || typeof I.start !== 'function') return;
+    if (!I || typeof I.start !== 'function') return false;
     try {
       var stage = el('div', undefined, 'stage');
       stage.setAttribute('aria-hidden', 'true');
@@ -278,8 +279,10 @@
       if (I.start(stage)) {
         o.root.classList.add('intro');
         overlayCleanup = function () { if (typeof I.stop === 'function') I.stop(); };
+        return true;
       } else stage.remove();
     } catch (e) { /* sin portada 3D */ }
+    return false;
   }
 
   // Botón de un solo uso: cierra el overlay y llama cb una vez.
@@ -309,7 +312,7 @@
 
   function showStart(onPlay) {
     var o = openOverlay();
-    mountIntro(o);
+    var intro = mountIntro(o);
     var lines = window.Content && Array.isArray(window.Content.start) && window.Content.start.length ? window.Content.start : DEFAULT_START;
     var myths = window.Content && Array.isArray(window.Content.myths) ? window.Content.myths : [];
     var truths = window.Content && Array.isArray(window.Content.truths) ? window.Content.truths : [];
@@ -320,7 +323,22 @@
     hero.appendChild(el('h1', 'COLLAPSE'));
     hero.appendChild(el('p', String(lines[0]), 'tagline'));
     var actions = el('div', undefined, 'actions');
-    var play = onceButton('Jugar', o, onPlay); play.classList.add('play');
+    var play = el('button', 'Jugar', 'play'), started = false;
+    play.type = 'button';
+    play.addEventListener('click', function () {
+      if (started) return;
+      started = true;
+      var called = false;
+      function go() { if (called) return; called = true; o.close(); if (typeof onPlay === 'function') onPlay(); }
+      var I = window.Intro3D, diving = false;
+      if (intro && I && typeof I.dive === 'function') {
+        o.root.classList.add('leaving');
+        play.disabled = true;
+        try { diving = I.dive(go); } catch (e) { diving = false; }
+      }
+      if (diving) setTimeout(go, 1600);   // por si la pestaña está oculta y la animación no avanza
+      else go();
+    });
     actions.appendChild(play);
     var how = el('button', 'Cómo jugar', 'alt');
     how.type = 'button';
