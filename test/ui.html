@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UI: página de prueba</title>
+  <style>
+    html, body { margin: 0; background: #0e1220; color: #e8ecf4; font-family: system-ui, sans-serif; }
+    #bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+    #bar button { min-height: 44px; padding: 0 14px; font-size: 14px; border-radius: 8px; border: 1px solid #3a4260; background: #1a2038; color: inherit; }
+    #bar button.on { background: #4cc9f0; color: #0e1220; }
+    canvas { display: block; width: 100%; height: 360px; }
+  </style>
+</head>
+<body>
+  <div id="bar"></div>
+  <canvas id="c"></canvas>
+
+  <script src="../js/ui.js"></script>
+  <script>
+    // Amplitudes reales del contrato: [sector marcado, cada uno de los otros 7]
+    var KT = { 0: [0.354, 0.354], 1: [0.884, 0.177], 2: [0.972, -0.088], 3: [0.575, -0.309] };
+    var THEORY = { 0: 0.125, 1: 0.781, 2: 0.945, 3: 0.33 };
+    var TARGET = 3, state = { cannon: 'quantum', k: 2 };
+
+    function quantumResult(k) {
+      var amps = [], probs = [];
+      for (var i = 0; i < 8; i++) { var re = i === TARGET ? KT[k][0] : KT[k][1]; amps.push({ re: re, im: 0 }); probs.push(re * re); }
+      return { amps: amps, probs: probs, theory: THEORY[k] };
+    }
+    function classicResult(k) { // k descartados (los primeros k sectores que no son el marcado)
+      var discarded = [], i = 0;
+      while (discarded.length < k) { if (i !== TARGET) discarded.push(i); i++; }
+      var probs = [];
+      for (var j = 0; j < 8; j++) probs.push(discarded.indexOf(j) >= 0 ? 0 : 1 / (8 - k));
+      return { probs: probs, discarded: discarded, found: false, theory: (k + 1) / 8 };
+    }
+
+    var canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+    function draw() {
+      var dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);             // el contrato entrega ctx ya escalado
+      ctx.clearRect(0, 0, w, h);
+      var cx = w / 2, cy = h / 2;
+      ctx.fillStyle = '#e8ecf4'; ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill(); // tanque
+      var r = state.cannon === 'quantum' ? quantumResult(state.k) : classicResult(state.k);
+      UI.drawSectors(ctx, cx, cy, r, state.cannon);
+      if (UI.drawHUD) UI.drawHUD(ctx, { energy: 64, cannon: state.cannon, k: state.k, radar: true });
+    }
+
+    var bar = document.getElementById('bar');
+    function add(label, fn, group) {
+      var b = document.createElement('button'); b.textContent = label; b.dataset.group = group;
+      b.onclick = function () { fn(); refresh(); }; bar.appendChild(b); return b;
+    }
+    var btns = [];
+    ['quantum', 'classic'].forEach(function (c) { btns.push([add(c === 'quantum' ? 'Cuántico' : 'Clásico', function () { state.cannon = c; }, 'c'), function () { return state.cannon === c; }]); });
+    [0, 1, 2, 3].forEach(function (k) { btns.push([add('k = ' + k, function () { state.k = k; }, 'k'), function () { return state.k === k; }]); });
+    function refresh() { btns.forEach(function (p) { p[0].className = p[1]() ? 'on' : ''; }); draw(); }
+    window.addEventListener('resize', draw);
+    refresh();
+  </script>
+</body>
+</html>
