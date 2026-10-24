@@ -6,6 +6,21 @@
   const SECTORS = 8;
   const SECTOR_ANGLE = (Math.PI * 2) / SECTORS;
   const RECORD_KEY = 'collapse.record';
+  const COLLECTION_KEY = 'collapse.coleccion';
+
+  // Colección de conceptos: cada logro es un objetivo de aprendizaje (sección 5 del brief).
+  // Nombre de respaldo; Content.achievements[id].titulo lo reemplaza.
+  const ACHIEVEMENTS = {
+    probCondicional: 'Probabilidad condicional',
+    amplitudNegativa: 'Amplitud negativa',
+    marcadorSolo: 'El marcador solo no basta',
+    interferencia: 'Interferencia',
+    sobreRotacion: 'Sobre-rotación',
+    tormentaEngana: 'La tormenta engaña a los dos',
+    decoherencia: 'Decoherencia',
+    grandesNumeros: 'Ley de los grandes números',
+    calibracion: 'Calibración',
+  };
 
   const config = {
     world: { w: 3200, h: 2200 },
@@ -95,7 +110,10 @@
     [0.88, 0.55, 210], [0.18, 0.84, 220], [0.52, 0.8, 250], [0.84, 0.86, 190],
   ];
 
-  const Game = { config, log: [], history: [], state: null, record: loadRecord(), start };
+  const Game = {
+    config, log: [], history: [], state: null, record: loadRecord(), start,
+    collection: loadCollection(), ACHIEVEMENTS: Object.keys(ACHIEVEMENTS),
+  };
   window.Game = Game;
 
   let canvas, ctx;
@@ -178,6 +196,34 @@
     return { kills: 0, quantumAcc: null };
   }
 
+  function loadCollection() {
+    try {
+      const c = JSON.parse(localStorage.getItem(COLLECTION_KEY));
+      if (c && c.unlocked && c.stats) return c;
+    } catch (e) { /* sin almacenamiento: colección solo en memoria */ }
+    return { unlocked: {}, stats: { classic: 0, searches: 0, stormMisreads: 0, hitStd2: 0 } };
+  }
+
+  function saveCollection() {
+    try { localStorage.setItem(COLLECTION_KEY, JSON.stringify(Game.collection)); } catch (e) { /* ignorar */ }
+  }
+
+  function achievementTitle(id) {
+    const C = window.Content;
+    const a = C && C.achievements && C.achievements[id];
+    return (a && a.titulo) || ACHIEVEMENTS[id] || id;
+  }
+
+  function unlock(id) {
+    const c = Game.collection;
+    if (c.unlocked[id]) return;
+    c.unlocked[id] = new Date().toISOString();
+    saveCollection();
+    world.newConcepts.push(id);
+    const n = Object.keys(c.unlocked).length, total = Object.keys(ACHIEVEMENTS).length;
+    hintQueue.push('★ Concepto desbloqueado: ' + achievementTitle(id) + ' (' + n + '/' + total + ')');
+  }
+
   function saveRecord(r) {
     try { localStorage.setItem(RECORD_KEY, JSON.stringify(r)); } catch (e) { /* ignorar */ }
   }
@@ -258,8 +304,9 @@
     }
   }
 
-  // Gancho para la colección de conceptos (parte 2).
-  function onPiecePicked(type) {}
+  function onPiecePicked(type) {
+    if (type === 'S') unlock('decoherencia');
+  }
 
   function dropLastPiece() {
     const w = world, p = w.player;
@@ -376,6 +423,7 @@
     return {
       fog, hazards, pickups, player, bots,
       circuit: [], groundPieces: [], circuitMode: false, nextLootAt: config.lootEvery,
+      newConcepts: [],
       bullets: [], particles: [], tracers: [],
       energy: config.energyMax, cannon: 'classic', k: 1,
       search: null, lastResult: null, radarBot: null,
@@ -577,8 +625,25 @@
     onSearchResolved(entry, s);
   }
 
-  // Gancho para la colección de conceptos (parte 2).
-  function onSearchResolved(entry, s) {}
+  // Detecta los logros a partir de lo que pasó en la búsqueda (no hay quizzes: se gana jugando).
+  function onSearchResolved(entry, s) {
+    const st = Game.collection.stats, info = s.info, g = info ? info.gates : [];
+    st.searches++;
+    if (entry.cannon === 'classic') {
+      st.classic++;
+      if (st.classic >= 5) unlock('probCondicional');
+    } else {
+      if (g.includes('M')) unlock('amplitudNegativa');
+      if (g.includes('M') && !g.includes('D')) unlock('marcadorSolo');
+      if (entry.hit && g.includes('H') && g.includes('M') && g.includes('D')) unlock('interferencia');
+      if (info.std === 2 && entry.hit) st.hitStd2++;
+      if (info.std === 3 && !entry.hit && st.hitStd2 > 0) unlock('sobreRotacion');
+      if (info.std === 2 && !entry.hit && entry.phaseNoise > 0) unlock('decoherencia');
+    }
+    if (entry.zone === 'tormenta' && entry.misreads > 0 && ++st.stormMisreads >= 3) unlock('tormentaEngana');
+    if (st.searches >= 30) unlock('grandesNumeros');
+    saveCollection();
+  }
 
   // Un bot busca al jugador escondido en la niebla con el cañón de su arquetipo.
   function botSearch(b) {
@@ -1116,6 +1181,8 @@
       circuit: w.circuit.slice(),
       circuitMax: config.circuitMax,
       circuitMode: w.circuitMode,
+      concepts: Object.keys(Game.collection.unlocked).length,
+      conceptsTotal: Object.keys(ACHIEVEMENTS).length,
       searching: !!w.search,
       activeBulletType: w.player.activeBulletType,
       inHazardH: !!findHazardAt(w.player.x, w.player.y),
@@ -1225,6 +1292,8 @@
     } else if (world.fogTarget < config.fogMaxScale) {
       ctx.fillText('La niebla se expande en ' + Math.ceil(world.nextFogAt - world.time) + ' s', v.w - 16, 60);
     }
+    ctx.fillStyle = 'rgba(255,209,102,0.9)';
+    ctx.fillText('Conceptos ' + Object.keys(Game.collection.unlocked).length + '/' + Object.keys(ACHIEVEMENTS).length, v.w - 16, 114);
     if (config.fogAlive) {
       const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
       let a = world.wind.ang % (Math.PI * 2);
