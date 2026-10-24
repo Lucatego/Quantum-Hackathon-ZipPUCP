@@ -30,6 +30,8 @@ const marked = k0.amps.slice();
 marked[TARGET] = -marked[TARGET];
 data.marker = { amps: marked, probs: k0.probs.slice() };
 
+data.qiskit = Q.toQiskit(2, TARGET);   // mismo sector que el resto del video
+
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'data.json'), JSON.stringify(data, null, 2));
 console.log('src/data.json escrito. p(marcado) por k:', data.quantum.map((d) => (d.probs[TARGET] * 100).toFixed(1) + ' %').join(' / '));
 console.log('clásico (k+1)/8:', data.classic.map((d) => (d.theory * 100).toFixed(1) + ' %').join(' / '));

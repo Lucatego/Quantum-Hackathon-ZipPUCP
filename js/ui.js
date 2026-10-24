@@ -213,6 +213,29 @@
       '#' + OVERLAY_ID + ' .demo{text-align:center;font-size:14px}' +
       '#' + OVERLAY_ID + ' .demo canvas{display:block;max-width:100%;margin:0 auto}' +
       '#' + OVERLAY_ID + ' button:disabled{opacity:.4;cursor:default}' +
+      '#' + OVERLAY_ID + ' .flow{display:grid;gap:10px;margin:14px 0}' +
+      '#' + OVERLAY_ID + ' .fstep{display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border:1px solid ' + COLOR.guide + ';border-radius:12px;background:rgba(232,236,244,.05)}' +
+      '#' + OVERLAY_ID + ' .fnum{flex:none;width:34px;height:34px;border-radius:50%;background:' + COLOR.pos + ';color:#0e1220;font-weight:800;display:flex;align-items:center;justify-content:center}' +
+      '#' + OVERLAY_ID + ' .keys{display:grid;gap:8px;margin:12px 0}' +
+      '#' + OVERLAY_ID + ' .keyrow{display:flex;align-items:center;gap:14px}' +
+      '#' + OVERLAY_ID + ' .keys-group{display:flex;gap:6px;min-width:150px}' +
+      '#' + OVERLAY_ID + ' .key{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;padding:0 8px;box-sizing:border-box;border-radius:8px;background:#1c2440;border:1px solid ' + COLOR.guide + ';border-bottom-width:3px;font-weight:700;font-size:14px}' +
+      '#' + OVERLAY_ID + ' table.map td,#' + OVERLAY_ID + ' table.map th{text-align:left;vertical-align:top}' +
+      '#' + OVERLAY_ID + ' table.map td:first-child{color:' + COLOR.prob + ';width:42%}' +
+      '#' + OVERLAY_ID + ' table.map td,#' + OVERLAY_ID + ' table.map th{font-size:14px;padding:6px 6px}' +
+      '#' + OVERLAY_ID + ' .ksel{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}' +
+      '#' + OVERLAY_ID + ' .ksel button{margin:0}' +
+      '#' + OVERLAY_ID + ' .wires{background:#080b16;border-radius:10px;padding:8px;overflow-x:auto}' +
+      '#' + OVERLAY_ID + ' .readout{color:' + COLOR.prob + ';font-weight:600}' +
+      '#' + OVERLAY_ID + ' .chart{display:flex;gap:6px;align-items:flex-end;justify-content:center;margin:14px 0 4px}' +
+      '#' + OVERLAY_ID + ' .cbars{display:flex;gap:4px;align-items:flex-end}' +
+      '#' + OVERLAY_ID + ' .cbar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;width:38px}' +
+      '#' + OVERLAY_ID + ' .cbar.warn .cfill{outline:3px dashed ' + COLOR.neg + ';outline-offset:2px}' +
+      '#' + OVERLAY_ID + ' .cval{font-size:12px;margin-bottom:4px;white-space:nowrap}' +
+      '#' + OVERLAY_ID + ' .cfill{width:100%;border-radius:6px 6px 0 0}' +
+      '#' + OVERLAY_ID + ' .clabel{text-align:center;margin-top:6px;font-size:14px}' +
+      '#' + OVERLAY_ID + ' .legend .lg1{color:' + COLOR.live + '}' +
+      '#' + OVERLAY_ID + ' .legend .lg2{color:' + COLOR.pos + '}' +
       '#' + OVERLAY_ID + ' pre{margin:0;padding:12px;background:#080b16;border-radius:8px;overflow-x:auto;font-size:14px}';
     document.head.appendChild(s);
   }
@@ -250,6 +273,7 @@
     if (!I || typeof I.start !== 'function') return;
     try {
       var stage = el('div', undefined, 'stage');
+      stage.setAttribute('aria-hidden', 'true');
       o.root.insertBefore(stage, o.box);
       if (I.start(stage)) {
         o.root.classList.add('intro');
@@ -315,38 +339,36 @@
     var good = renderMessagePanel('Qué sí queremos promover', truths);
     if (good) more.appendChild(good);
     hero.appendChild(more);
-    hero.appendChild(el('p', 'WASD mover · ← → apuntar · Espacio buscar · 1 / 2 cañón · Q / E k', 'hint'));
+    hero.appendChild(el('p', 'WASD mover · ← → apuntar · Espacio buscar · 1 / 2 cañón · Q / E k clásico · R soltar pieza', 'hint'));
     o.box.appendChild(hero);
   }
 
-  // ---- Guía "Cómo jugar" (plan-guia-en-juego, fase 1) ----
-  // Una idea por diapositiva. Content.guide = [{ titulo, texto }] la sobrescribe; '\n' separa párrafos.
+  // ---- Guía "Cómo jugar" ----
+  // Una idea por diapositiva, con un elemento visual. Content.guide = [{ titulo, texto, visual? }] la sobrescribe;
+  // '\n' separa párrafos. visual: 'sectors' | 'flow' | 'keys' | 'cannons' | 'mapping' | 'circuit' | 'chart'.
   var DEFAULT_GUIDE = [
-    { titulo: 'El reto', texto:
+    { titulo: 'El reto', visual: 'sectors', texto:
       'Hay un enemigo escondido en la niebla.\n' +
       'El radar te avisa de que está cerca, pero no en cuál de los 8 sectores que rodean tu tanque.\n' +
       'Disparar a ciegas acierta 1 de cada 8 veces (12,5 %).' },
-    { titulo: 'Controles', texto:
-      'Mover: WASD. Apuntar: mouse, o ← → sin mouse (↑ ↓ mueven la vista).\n' +
-      'Disparo normal: clic izquierdo o F.\n' +
-      'Buscar en la niebla: Espacio o clic derecho (solo con el radar encendido).\n' +
-      'Cañón clásico o cuántico: teclas 1 y 2.\n' +
-      'Bajar o subir k: Q y E (de 0 a 3).' },
-    { titulo: 'Dos cañones, misma energía', texto:
-      'Cada consulta o iteración cuesta la misma energía, y los dos cañones usan el mismo sensor.\n' +
-      'El clásico revisa un sector por consulta y descarta los que no son.\n' +
-      'El cuántico reparte amplitudes y las hace interferir para reforzar el sector correcto.' },
-    { titulo: 'Cómo leer las barras', demo: true, texto:
-      'Clásico: barras de probabilidad; los sectores descartados se ven en gris.\n' +
+    { titulo: 'Cómo se juega', visual: 'flow', texto:
+      'Buscar en la niebla cuesta energía, y la energía se regenera con el tiempo. Los dos cañones pagan lo mismo.' },
+    { titulo: 'Controles', visual: 'keys', texto: '' },
+    { titulo: 'Dos cañones, misma energía', visual: 'cannons', texto:
+      'Clásico: cada consulta revisa un sector y lo descarta (se ve en gris).\n' +
       'Cuántico: la cuña de color es la amplitud (cian positiva, rosa negativa) y el cono amarillo es la probabilidad, la amplitud al cuadrado.\n' +
       'El disparo sale hacia un sector elegido al azar según las probabilidades. (Ejemplo ilustrativo.)' },
-    { titulo: 'La trampa de pasarse', texto:
-      'Con 8 sectores y sin ruido, el acierto cuántico teórico es 12,5 % con k = 0, 78,1 % con k = 1, 94,5 % con k = 2 y 33,0 % con k = 3.\n' +
-      'El clásico con k consultas acierta (k+1)/8: 12,5, 25, 37,5 y 50 %.\n' +
-      'Más iteraciones no siempre ayudan: con k = 3 el acierto cae.' },
+    { titulo: '¿Qué tiene que ver con la computación cuántica?', visual: 'mapping', texto:
+      'Tu cañón cuántico simula un circuito de 3 qubits. Cada cosa que ves en el juego es una pieza de ese circuito.' },
+    { titulo: 'Tu cañón cuántico es un circuito', visual: 'circuit', texto:
+      'Recoge piezas: H (superposición), M (marcador) y D (difusor). Cada par M + D es una iteración, es decir, un valor de k. R suelta la última pieza.\n' +
+      'Prueba distintos k y mira cómo cambia el circuito y el acierto teórico.' },
+    { titulo: 'La trampa de pasarse', visual: 'chart', texto:
+      'Con 8 sectores y sin ruido, el cuántico mejora hasta k = 2 y después baja: con k = 3 la amplitud “da la vuelta”.\n' +
+      'El clásico con k consultas acierta (k+1)/8: sube siempre, pero despacio.' },
     { titulo: 'Una partida no demuestra nada', texto:
       'Al final verás los aciertos observados frente a la teoría. Con pocos disparos pueden alejarse mucho: es variación normal.\n' +
-      'Es una simulación didáctica de 3 qubits: no es hardware cuántico ni una ventaja cuántica real.' }
+      'Es una simulación didáctica de 3 qubits, no hardware cuántico. La ventaja de Grover en número de consultas es real para la búsqueda no estructurada idealizada, pero con 8 sectores esto no demuestra una ventaja práctica.' }
   ];
 
   function guideSlides() {
@@ -359,7 +381,7 @@
   // Ejemplo vivo: el mismo drawSectors del juego, con las amplitudes del contrato (k = 2, sector 3).
   function demoCanvas(label, result, cannon) {
     var wrap = el('div', undefined, 'demo'), c = document.createElement('canvas');
-    var size = 220, dpr = window.devicePixelRatio || 1;
+    var size = 270, dpr = window.devicePixelRatio || 1;
     c.width = size * dpr; c.height = size * dpr; c.style.width = size + 'px'; c.style.height = size + 'px';
     var ctx = c.getContext && c.getContext('2d');
     if (ctx) {
@@ -379,6 +401,183 @@
       classic: { probs: [0, 0, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6], discarded: [0, 1], found: false, theory: 0.375 }
     };
   }
+
+  // Acierto teórico por k (sector buscado 3): del simulador si existe; si no, la tabla del brief.
+  var GUIDE_TABLE = [0.125, 0.781, 0.945, 0.33];
+  function guideProbs() {
+    var quantum = [];
+    for (var k = 0; k <= 3; k++) {
+      var p = null;
+      try {
+        var Q = window.Quantum, r = Q && typeof Q.runQuantum === 'function' && Q.runQuantum({ k: k, target: 3 });
+        if (r && r.probs && typeof r.probs[3] === 'number') p = r.probs[3];
+      } catch (e) { /* tabla */ }
+      quantum.push(p === null ? GUIDE_TABLE[k] : p);
+    }
+    return { quantum: quantum, classic: [1 / 8, 2 / 8, 3 / 8, 4 / 8] };
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, text) {
+    var e = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  // --- Visuales de la guía ---
+  function visSectors() {
+    var wrap = el('div', undefined, 'demo'), c = document.createElement('canvas');
+    var size = 280, dpr = window.devicePixelRatio || 1, ctx = null;
+    c.width = size * dpr; c.height = size * dpr; c.style.width = size + 'px'; c.style.height = size + 'px';
+    try { ctx = c.getContext && c.getContext('2d'); } catch (e) { ctx = null; }
+    if (ctx) {
+      var cx = size / 2, cy = size / 2, r0 = 34, r1 = 118;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineWidth = 2; ctx.strokeStyle = COLOR.guide; ctx.font = '14px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (var i = 0; i < 8; i++) {
+        var a0 = i * Math.PI / 4 + 0.02, a1 = (i + 1) * Math.PI / 4 - 0.02, mid = (i + 0.5) * Math.PI / 4;
+        ctx.beginPath(); ctx.arc(cx, cy, r1, a0, a1); ctx.arc(cx, cy, r0, a1, a0, true); ctx.closePath(); ctx.stroke();
+        ctx.fillStyle = COLOR.text; ctx.fillText(String(i), cx + (r1 + 14) * Math.cos(mid), cy + (r1 + 14) * Math.sin(mid));
+      }
+      ctx.fillStyle = COLOR.text; ctx.fillRect(cx - 17, cy - 12, 34, 24);
+      ctx.fillStyle = '#8e9dbf'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
+      var ex = cx + 78 * Math.cos(3.5 * Math.PI / 4), ey = cy + 78 * Math.sin(3.5 * Math.PI / 4);   // el enemigo, escondido en el sector 3
+      ctx.setLineDash([6, 5]); ctx.strokeStyle = COLOR.neg; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ex, ey, 17, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = COLOR.neg; ctx.font = 'bold 22px system-ui, sans-serif'; ctx.fillText('?', ex, ey + 1);
+    }
+    wrap.appendChild(c);
+    wrap.appendChild(el('div', 'Tu tanque y los 8 sectores. El enemigo está en uno, pero no sabes cuál.'));
+    return wrap;
+  }
+
+  function visFlow() {
+    var box = el('div', undefined, 'flow');
+    [
+      ['1', 'Muévete y apunta', 'WASD para moverte; ← → o el mouse para apuntar.'],
+      ['2', 'Si lo ves, dispara', 'Clic o F. La bala 1 daña; la bala 0 te cura a ti.'],
+      ['3', 'Si se esconde, búscalo', 'Cuando el radar lo detecta, elige cañón (1 o 2) y pulsa Espacio.']
+    ].forEach(function (s) {
+      var card = el('div', undefined, 'fstep');
+      card.appendChild(el('div', s[0], 'fnum'));
+      var t = el('div'); t.appendChild(el('strong', s[1])); t.appendChild(el('div', s[2]));
+      card.appendChild(t);
+      box.appendChild(card);
+    });
+    return box;
+  }
+
+  function visKeys() {
+    var box = el('div', undefined, 'keys');
+    [
+      [['W', 'A', 'S', 'D'], 'Mover'],
+      [['←', '→'], 'Apuntar (o con el mouse); ↑ ↓ mueven la vista'],
+      [['F'], 'Disparo normal (o clic izquierdo)'],
+      [['Espacio'], 'Buscar en la niebla (con el radar encendido)'],
+      [['1', '2'], 'Cañón clásico / cuántico'],
+      [['Q', 'E'], 'Bajar / subir k del cañón clásico (0 a 3)'],
+      [['R'], 'Soltar la última pieza del circuito cuántico'],
+      [['Z', 'X'], 'Bala 0 (cura) / bala 1 (daña)']
+    ].forEach(function (r) {
+      var row = el('div', undefined, 'keyrow'), ks = el('span', undefined, 'keys-group');
+      r[0].forEach(function (k) { ks.appendChild(el('span', k, 'key')); });
+      row.appendChild(ks); row.appendChild(el('span', r[1]));
+      box.appendChild(row);
+    });
+    return box;
+  }
+
+  function visCannons() {
+    var d = demoResults(), row = el('div', undefined, 'demos');
+    row.appendChild(demoCanvas('Clásico: 2 sectores descartados', d.classic, 'classic'));
+    row.appendChild(demoCanvas('Cuántico: k = 2, sector marcado: 3', d.quantum, 'quantum'));
+    return row;
+  }
+
+  function visMapping() {
+    var wrap = el('div', undefined, 'scroll'), t = el('table', undefined, 'map'), head = el('tr');
+    ['En el juego', 'En computación cuántica'].forEach(function (h) { head.appendChild(el('th', h)); });
+    t.appendChild(head);
+    [
+      ['8 sectores alrededor del tanque', '3 qubits: 2³ = 8 estados posibles'],
+      ['Cuña de color de cada sector', 'Amplitud de ese estado (puede ser negativa)'],
+      ['Cono amarillo', 'Probabilidad = amplitud al cuadrado'],
+      ['Pieza H', 'Superposición: todas las amplitudes iguales'],
+      ['El sensor del juego', 'El oráculo: reconoce el sector buscado (una abstracción)'],
+      ['Pieza M (marcador)', 'Invierte el signo de la amplitud del sector buscado'],
+      ['Pieza D (difusor)', 'Interferencia: refuerza el sector marcado'],
+      ['Un par M + D  (k = 1)', 'Una iteración del algoritmo de Grover'],
+      ['Tu disparo', 'Medición: sale un sector con probabilidad = amplitud al cuadrado']
+    ].forEach(function (r) {
+      var tr = el('tr'); r.forEach(function (c) { tr.appendChild(el('td', c)); });
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    var note = el('p', 'El circuito no “descubre” al enemigo por sí solo: el sensor es la abstracción que le dice cuál es el sector buscado.');
+    var all = el('div'); all.appendChild(wrap); all.appendChild(note);
+    return all;
+  }
+
+  var circuitK = 2;   // se conserva al navegar entre diapositivas
+  function visCircuit() {
+    var box = el('div', undefined, 'circuit');
+    var sel = el('div', undefined, 'ksel'), out = el('p', undefined, 'readout'), holder = el('div', undefined, 'wires');
+    var probs = guideProbs();
+    function drawCircuit() {
+      holder.textContent = '';
+      var gate = 46, gap = 12, x0 = 56, nIter = circuitK, width = x0 + (gate + gap) + nIter * 2 * (gate + gap) + 70;
+      var svg = svgEl('svg', { viewBox: '0 0 ' + width + ' 150', width: '100%', role: 'img', 'aria-label': 'Circuito del cañón cuántico con k = ' + circuitK });
+      [0, 1, 2].forEach(function (q) {
+        svg.appendChild(svgEl('line', { x1: 36, x2: width - 10, y1: 30 + q * 45, y2: 30 + q * 45, stroke: COLOR.guide, 'stroke-width': 2 }));
+        var t = svgEl('text', { x: 6, y: 35 + q * 45, fill: COLOR.text, 'font-size': 14 }, 'q' + q); svg.appendChild(t);
+      });
+      var x = x0;
+      function oneGate(label, color, tall) {
+        var h = tall ? 106 : 34;
+        [0, 1, 2].forEach(function (q) {
+          if (!tall) { svg.appendChild(svgEl('rect', { x: x, y: 30 + q * 45 - 17, width: gate, height: 34, rx: 7, fill: color })); svg.appendChild(svgEl('text', { x: x + gate / 2, y: 30 + q * 45 + 6, fill: '#0e1220', 'font-size': 18, 'font-weight': 700, 'text-anchor': 'middle' }, label)); }
+        });
+        if (tall) { svg.appendChild(svgEl('rect', { x: x, y: 13, width: gate, height: h, rx: 7, fill: color })); svg.appendChild(svgEl('text', { x: x + gate / 2, y: 70, fill: '#0e1220', 'font-size': 20, 'font-weight': 700, 'text-anchor': 'middle' }, label)); }
+        x += gate + gap;
+      }
+      oneGate('H', '#4cc9f0', false);
+      for (var i = 0; i < circuitK; i++) { oneGate('M', '#ff6b9d', true); oneGate('D', '#ffd166', true); }
+      svg.appendChild(svgEl('rect', { x: x + 6, y: 13, width: 50, height: 106, rx: 7, fill: 'none', stroke: COLOR.text, 'stroke-width': 2 }));
+      svg.appendChild(svgEl('text', { x: x + 31, y: 70, fill: COLOR.text, 'font-size': 13, 'text-anchor': 'middle' }, 'medir'));
+      holder.appendChild(svg);
+      out.textContent = 'k = ' + circuitK + ': acierto teórico del cuántico ' + pct(probs.quantum[circuitK]) + ' · clásico con ' + circuitK + ' consultas ' + pct(probs.classic[circuitK]);
+    }
+    [0, 1, 2, 3].forEach(function (k) {
+      var b = el('button', 'k = ' + k, 'alt'); b.type = 'button';
+      b.addEventListener('click', function () { circuitK = k; drawCircuit(); });
+      sel.appendChild(b);
+    });
+    box.appendChild(sel); box.appendChild(holder); box.appendChild(out);
+    drawCircuit();
+    return box;
+  }
+
+  function visChart() {
+    var probs = guideProbs(), box = el('div', undefined, 'chart'), H = 150;
+    for (var k = 0; k <= 3; k++) {
+      var grp = el('div', undefined, 'cgrp'), bars = el('div', undefined, 'cbars');
+      [['classic', probs.classic[k], COLOR.live], ['quantum', probs.quantum[k], COLOR.pos]].forEach(function (b) {
+        var col = el('div', undefined, 'cbar' + (b[0] === 'quantum' && k === 3 ? ' warn' : ''));
+        col.appendChild(el('div', pct(b[1]), 'cval'));
+        var bar = el('div', undefined, 'cfill'); bar.style.height = Math.max(3, Math.round(b[1] * H)) + 'px'; bar.style.background = b[2];
+        col.appendChild(bar); bars.appendChild(col);
+      });
+      grp.appendChild(bars); grp.appendChild(el('div', 'k = ' + k, 'clabel'));
+      box.appendChild(grp);
+    }
+    var legend = el('p', undefined, 'legend');
+    legend.appendChild(el('span', '■ clásico', 'lg1')); legend.appendChild(document.createTextNode('  ')); legend.appendChild(el('span', '■ cuántico', 'lg2'));
+    var all = el('div'); all.appendChild(box); all.appendChild(legend);
+    return all;
+  }
+
+  var VISUALS = { sectors: visSectors, flow: visFlow, keys: visKeys, cannons: visCannons, mapping: visMapping, circuit: visCircuit, chart: visChart };
 
   function showGuide(onClose) {
     var slides = guideSlides(), idx = 0, closed = false;
@@ -409,12 +608,8 @@
       o.box.appendChild(el('p', (idx + 1) + ' / ' + slides.length, 'step'));
       o.box.appendChild(el('h2', s.titulo));
       String(s.texto).split('\n').forEach(function (l) { if (l.trim()) o.box.appendChild(el('p', l)); });
-      if (s.demo) {
-        var d = demoResults(), row = el('div', undefined, 'demos');
-        row.appendChild(demoCanvas('Clásico: 2 sectores descartados', d.classic, 'classic'));
-        row.appendChild(demoCanvas('Cuántico: k = 2, sector marcado: 3', d.quantum, 'quantum'));
-        o.box.appendChild(row);
-      }
+      var vis = VISUALS[s.visual || (s.demo ? 'cannons' : '')];
+      if (vis) { try { o.box.appendChild(vis()); } catch (e) { /* sin visual: queda el texto */ } }
       var nav = el('div', undefined, 'nav');
       var prev = el('button', 'Anterior', 'alt'); prev.type = 'button'; prev.disabled = idx === 0;
       prev.addEventListener('click', function () { go(-1); });
