@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test: Quantum</title>
+  <style>
+    body { background: #0e1220; color: #e8ecf4; font-family: system-ui, sans-serif; margin: 0; padding: 16px; max-width: 760px; }
+    h1 { margin-top: 0; }
+    .ok { color: #2ecc71; } .bad { color: #e74c3c; font-weight: bold; }
+    table { border-collapse: collapse; margin: 8px 0 16px; }
+    td, th { border: 1px solid #2a3350; padding: 4px 10px; text-align: right; }
+    pre { background: #161c30; padding: 12px; overflow: auto; border-radius: 6px; }
+    #log div { font-family: monospace; padding: 1px 0; }
+  </style>
+</head>
+<body>
+  <h1>Quantum.selfTest()</h1>
+  <p>También se imprime en la consola del navegador (F12).</p>
+  <div id="log"></div>
+
+  <h2>Tabla 8.4 (del simulador)</h2>
+  <table id="tabla"></table>
+
+  <h2>Qiskit exportado (k = 2)</h2>
+  <pre id="qiskit"></pre>
+
+  <script src="../js/quantum.js"></script>
+  <script>
+    var log = document.getElementById('log');
+    var orig = console.log;
+    console.log = function () {
+      orig.apply(console, arguments);
+      var a = Array.prototype.slice.call(arguments), text = String(a[0]);
+      if (text.indexOf('%c') === 0) {
+        var d = document.createElement('div');
+        d.textContent = text.replace('%c', '');
+        d.className = /^%cOK|✔/.test(text) ? 'ok' : (/FALLA|✘/.test(text) ? 'bad' : '');
+        log.appendChild(d);
+      }
+    };
+    var res = Quantum.selfTest();
+    console.log = orig;
+
+    var t = '<tr><th>k</th><th>Clásico (k+1)/8</th><th>Cuántico sin²((2k+1)θ)</th><th>Simulado</th></tr>';
+    for (var k = 0; k < 4; k++) {
+      var q = Quantum.runQuantum({ k: k, target: 3 }), c = Quantum.runClassical({ k: k, target: 3 });
+      t += '<tr><td>' + k + '</td><td>' + (100 * c.theory).toFixed(1) + '%</td><td>' + (100 * q.theory).toFixed(1) +
+           '%</td><td>' + (100 * q.probs[3]).toFixed(1) + '%</td></tr>';
+    }
+    document.getElementById('tabla').innerHTML = t;
+    document.getElementById('qiskit').textContent = Quantum.toQiskit(2);
+    document.title = (res.pass ? '✔ ' : '✘ ') + 'Test: Quantum';
+  </script>
+</body>
+</html>
